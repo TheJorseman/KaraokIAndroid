@@ -75,7 +75,19 @@ class ModelManagerViewModel @Inject constructor(
     val effects: StateFlow<Effect?> = _effects.asStateFlow()
 
     init {
-        viewModelScope.launch { catalogSyncer.syncFromBundledCatalog() }
+        viewModelScope.launch {
+            // The catalog table can be wiped by `pm clear` while the
+            // ViewModel survives the activity restart, so re-sync
+            // every time we observe an empty models list. The sync
+            // is idempotent (OnConflictStrategy.REPLACE) and reads
+            // only the bundled assets, so it does not interfere with
+            // user downloads.
+            modelDao.observeAll().collect { rows ->
+                if (rows.isEmpty()) {
+                    catalogSyncer.syncFromBundledCatalog()
+                }
+            }
+        }
     }
 
     fun selectTier(tier: ModelTier) {
@@ -136,20 +148,23 @@ class ModelManagerViewModel @Inject constructor(
         prompt: Boolean,
         error: String?,
     ): TierUiState {
+        val byType: (ModelType) -> ModelEntity? = { type ->
+            models.firstOrNull { it.type == type }
+        }
         val options = ModelTier.values().map { t ->
-            val sep = models.firstOrNull { it.tier == t && it.type == ModelType.SEPARATION }
-            val tr = models.firstOrNull { it.tier == t && it.type == ModelType.TRANSCRIPTION }
+            val sep = byType(ModelType.SEPARATION)
+            val tr = byType(ModelType.TRANSCRIPTION)
             TierOption(
                 tier = t,
                 separation = sep?.toStatus(accepted) ?: ModelEntryStatus(
                     entity = placeholderEntity(t, ModelType.SEPARATION),
                     canDownload = false,
-                    reasonCannotDownload = "No catalogado",
+                    reasonCannotDownload = "Sin modelo de separación en el catálogo",
                 ),
                 transcription = tr?.toStatus(accepted) ?: ModelEntryStatus(
                     entity = placeholderEntity(t, ModelType.TRANSCRIPTION),
                     canDownload = false,
-                    reasonCannotDownload = "No catalogado",
+                    reasonCannotDownload = "Sin modelo de transcripción en el catálogo",
                 ),
             )
         }

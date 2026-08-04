@@ -1,25 +1,10 @@
-﻿{
-  "version": 1,
-  "updated_at": "2026-08-04T00:00:00Z",
+{
+  "version": 2,
+  "updated_at": "2026-08-05T00:00:00Z",
   "entries": [
     {
-      "id": "mel-band-roformer-fast-sep",
-      "name": "Mel-Band RoFormer vocal (FP16, Fast)",
-      "tier": "FAST",
-      "type": "SEPARATION",
-      "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
-      "size_bytes": 746498840,
-      "checksum_sha256": "dde2bfe8f85d2c12efa24ce4d45cc13e8709b8a72e277a93f130d496d948e918",
-      "license": "MIT",
-      "embedded_in_asset_pack": false,
-      "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
-      "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
-      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
-      "notes": "FP16 seleccionado porque el grafo INT8 generado no es válido en ONNX Runtime. El sidecar .data es obligatorio."
-    },
-    {
-      "id": "mel-band-roformer-balanced-sep",
-      "name": "Mel-Band RoFormer vocal (FP16, Balanced)",
+      "id": "mel-band-roformer-vocals",
+      "name": "Mel-Band RoFormer vocal (FP16)",
       "tier": "BALANCED",
       "type": "SEPARATION",
       "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
@@ -29,21 +14,8 @@
       "embedded_in_asset_pack": false,
       "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
       "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
-      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data"
-    },
-    {
-      "id": "mel-band-roformer-hq-sep",
-      "name": "Mel-Band RoFormer vocal (FP16, HQ)",
-      "tier": "HQ",
-      "type": "SEPARATION",
-      "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
-      "size_bytes": 746498840,
-      "checksum_sha256": "dde2bfe8f85d2c12efa24ce4d45cc13e8709b8a72e277a93f130d496d948e918",
-      "license": "MIT",
-      "embedded_in_asset_pack": false,
-      "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
-      "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
-      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data"
+      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
+      "notes": "Modelo único para los tres tiers; FP16 de ~707 MB. INT8 no soportado por ORT en este grafo."
     },
     {
       "id": "whisper-tiny-q5-1-fast",

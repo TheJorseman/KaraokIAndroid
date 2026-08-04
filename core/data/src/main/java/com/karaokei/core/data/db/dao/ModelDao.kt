@@ -17,6 +17,9 @@ interface ModelDao {
     @Query("SELECT * FROM models WHERE tier = :tier AND type = :type LIMIT 1")
     suspend fun findByTierAndType(tier: ModelTier, type: ModelType): ModelEntity?
 
+    @Query("SELECT * FROM models WHERE type = :type")
+    suspend fun findByType(type: ModelType): List<ModelEntity>
+
     @Query("SELECT * FROM models WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ModelEntity?
 

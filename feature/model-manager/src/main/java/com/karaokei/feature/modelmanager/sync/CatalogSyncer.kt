@@ -1,5 +1,6 @@
 package com.karaokei.feature.modelmanager.sync
 
+import android.util.Log
 import com.karaokei.core.common.result.getOrNull
 import com.karaokei.core.data.db.dao.ModelDao
 import com.karaokei.core.data.db.entity.ModelEntity
@@ -25,11 +26,17 @@ class CatalogSyncer @Inject constructor(
 ) {
 
     suspend fun syncFromBundledCatalog() {
-        val catalog = catalogLoader.loadBundled().getOrNull() ?: return
+        val result = catalogLoader.loadBundled()
+        val catalog = result.getOrNull() ?: run {
+            Log.e(TAG, "Failed to load bundled catalog: $result")
+            return
+        }
+        Log.i(TAG, "Loading ${catalog.entries.size} catalog entries")
         catalog.entries.forEach { entry ->
             val existing = modelDao.findById(entry.id)
             if (existing == null) {
                 modelDao.upsert(mapper.toEntity(entry))
+                Log.i(TAG, "Inserted catalog entry: ${entry.id}")
             } else {
                 modelDao.upsert(merge(existing, entry))
             }
@@ -47,10 +54,17 @@ class CatalogSyncer @Inject constructor(
             url = mapped.url,
             license = mapped.license,
             isEmbedded = mapped.isEmbedded,
+            assetPath = mapped.assetPath,
+            sidecarUrl = mapped.sidecarUrl,
+            sidecarPath = mapped.sidecarPath,
             // Preserve download state and license acceptance.
             localPath = existing.localPath,
             downloadedAt = existing.downloadedAt,
             licenseAccepted = existing.licenseAccepted || mapped.licenseAccepted,
         )
+    }
+
+    private companion object {
+        private const val TAG = "CatalogSyncer"
     }
 }

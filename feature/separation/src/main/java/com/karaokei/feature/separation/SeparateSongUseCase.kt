@@ -50,13 +50,18 @@ class SeparateSongUseCase @Inject constructor(
         val song = songDao.findById(songId)
             ?: throw IllegalStateException("song $songId not found")
         val tier = preferences.selectedTier.first()
-        val model = modelDao.findByTierAndType(tier, ModelType.SEPARATION) ?: run {
-            songDao.updateStatus(songId, SongStatus.ERROR)
-            throw IllegalStateException(
-                "no separation model for tier $tier. " +
-                    "Abre la pantalla Modelos y descarga uno antes de procesar."
-            )
-        }
+        // The catalog is currently single-source: every tier shares the
+        // same RoFormer weights. Fall back to *any* available
+        // separation model rather than the empty tier-specific row.
+        val model = modelDao.findByTierAndType(tier, ModelType.SEPARATION)
+            ?: modelDao.findByType(ModelType.SEPARATION).firstOrNull()
+            ?: run {
+                songDao.updateStatus(songId, SongStatus.ERROR)
+                throw IllegalStateException(
+                    "no separation model for tier $tier. " +
+                        "Abre la pantalla Modelos y descarga uno antes de procesar."
+                )
+            }
 
         songDao.updateStatus(songId, SongStatus.SEPARATING)
 
