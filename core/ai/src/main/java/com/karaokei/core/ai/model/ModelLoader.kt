@@ -45,7 +45,7 @@ class ModelLoader @Inject constructor(
      */
     fun resolvePath(model: ModelEntity): AppResult<String> = runCatchingResult {
         when {
-            !model.localPath.isNullOrBlank() -> model.localPath
+            !model.localPath.isNullOrBlank() -> model.localPath!!
             model.isEmbedded -> ensureExtracted(model)
             else -> throw IllegalStateException(
                 "model ${model.id} is not downloaded and is not embedded"
@@ -102,7 +102,7 @@ class ModelLoader @Inject constructor(
     private fun ensureExtracted(model: ModelEntity): String {
         val target = extractedPath(model)
         val graph = File(target)
-        val sidecarName = sidecarAssetName(model)
+        val sidecarName = model.sidecarPath ?: sidecarAssetName(model)
         val sidecar = if (sidecarName != null) File("$target.data") else null
         if (graph.exists() && (sidecar == null || sidecar.exists())) {
             return target
@@ -142,8 +142,7 @@ class ModelLoader @Inject constructor(
      */
     private fun sidecarAssetName(model: ModelEntity): String? {
         if (model.type != com.karaokei.core.data.db.entity.ModelType.SEPARATION) return null
-        val name = assetName(model)
-        return "$name.data"
+        return model.sidecarPath ?: "${assetName(model)}.data"
     }
 
     /**
@@ -153,6 +152,7 @@ class ModelLoader @Inject constructor(
      * source of truth when present.
      */
     private fun inferAssetPath(model: ModelEntity): String {
+        model.assetPath?.let { return it }
         val base = when (model.type) {
             com.karaokei.core.data.db.entity.ModelType.SEPARATION -> "separation"
             com.karaokei.core.data.db.entity.ModelType.TRANSCRIPTION -> "transcription"

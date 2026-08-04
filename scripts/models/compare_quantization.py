@@ -54,6 +54,11 @@ def to_roformer_input(stft_packed: np.ndarray, n_freq_target: int) -> np.ndarray
     model card, so we interleave the complex channels along the bin
     axis. The output axis 1 must be exactly `n_freq * channels`.
     """
+    # stft_packed is produced by stft_packed() as
+    # [channels, frames, freq, complex]. Normalize it here to
+    # [channels, freq, frames, complex] before packing.
+    if stft_packed.shape[1] != n_freq_target and stft_packed.shape[2] == n_freq_target:
+        stft_packed = stft_packed.transpose(0, 2, 1, 3)
     channels, n_freq, n_frames, _ = stft_packed.shape
     n_freq = min(n_freq, n_freq_target)
     re = stft_packed[:, :n_freq, :, 0]  # [channels, n_freq, n_frames]
@@ -103,24 +108,35 @@ def run(fp16: Path, int8: Path, sample_seconds: float = 30.0) -> dict:
     sess = ort.InferenceSession(str(fp16), providers=["CPUExecutionProvider"])
     input_name = sess.get_inputs()[0].name
     expected_shape = sess.get_inputs()[0].shape
-    expected_n_freq = expected_shape[2] // 2
-    expected_n_frames = expected_shape[3]
+    expected_n_freq = expected_shape[1] // 2
+    expected_n_frames = expected_shape[2]
     # Pad / trim frames to the exact count the model expects.
-    n_frames = stft.shape[2]
+    # stft_packed() returns [channels, frames, freq, complex].
+    n_frames = stft.shape[1]
     if n_frames < expected_n_frames:
         pad = np.zeros(
-            (stft.shape[0], stft.shape[1], expected_n_frames - n_frames, 2),
+            (stft.shape[0], expected_n_frames - n_frames, stft.shape[2], 2),
             dtype=stft.dtype,
         )
-        stft = np.concatenate([stft, pad], axis=2)
+        stft = np.concatenate([stft, pad], axis=1)
     elif n_frames > expected_n_frames:
-        stft = stft[:, :, :expected_n_frames, :]
+        stft = stft[:, :expected_n_frames, :, :]
 
     x = to_roformer_input(stft, expected_n_freq)
     print(f"x shape: {x.shape} (expected {[1, expected_n_freq * 2, expected_n_frames, 2]})")
     out_fp16 = run_session(fp16, x, input_name)
-    out_int8 = run_session(int8, x, input_name)
-    return metrics(out_fp16, out_int8)
+    try:
+        out_int8 = run_session(int8, x, input_name)
+    except Exception as error:
+        return {
+            "verdict": "REJECT_INT8",
+            "reason": "INT8 graph cannot be loaded by ONNX Runtime",
+            "error": str(error),
+            "fp16_output_shape": list(out_fp16.shape),
+        }
+    result = metrics(out_fp16, out_int8)
+    result["verdict"] = "KEEP_INT8" if result["cosine_similarity"] >= 0.999 and result["mean_abs_diff"] <= 0.01 else "KEEP_FP16"
+    return result
 
 
 if __name__ == "__main__":

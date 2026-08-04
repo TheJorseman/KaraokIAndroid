@@ -63,11 +63,23 @@ def run(cache_root: Path, target_root: Path) -> dict:
     quantize(src, out, strategy="dynamic")
     elapsed = time.time() - start
     sidecar = target_root / f"{GRAPH_OUT_NAME}.data"
+    # Validate before writing a production manifest. ORT currently
+    # rejects this FP16 graph when DynamicQuantizeLinear is inserted;
+    # never publish an invalid INT8 artifact.
+    try:
+        ort.InferenceSession(str(out), providers=["CPUExecutionProvider"])
+    except Exception as error:
+        out.unlink(missing_ok=True)
+        raise SystemExit(
+            "INT8 RoFormer graph is not loadable by ONNX Runtime; "
+            "keep FP16 instead: " + str(error)
+        ) from error
+
     manifest = {
         "model_id": "mel-band-roformer-vocals-int8",
         "source": "silverdaw/mel-band-roformer-vocals-onnx",
         "license": "MIT",
-        "quantization": {"method": "static", "target": "INT8", "elapsed_seconds": elapsed},
+        "quantization": {"method": "dynamic", "target": "INT8", "elapsed_seconds": elapsed},
         "files": {
             GRAPH_OUT_NAME: {
                 "size_bytes": out.stat().st_size,

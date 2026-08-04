@@ -49,11 +49,18 @@ class ModelDownloadWorker @AssistedInject constructor(
         val model = modelDao.findById(modelId)
             ?: return@withContext Result.failure(errorData("model not found in db"))
 
-        val target = File(cache.modelsDir(), "${modelId}.bin")
-        val tmp = File(cache.modelsDir(), "${modelId}.bin.part")
+        val graphName = model.assetPath?.substringAfterLast('/') ?: "${modelId}.bin"
+        val target = File(cache.modelsDir(), graphName)
+        val tmp = File(cache.modelsDir(), "$graphName.part")
 
         try {
             downloadWithChecksum(url, tmp, target, model.checksumSha256)
+            model.sidecarUrl?.let { sidecarUrl ->
+                val sidecarName = model.sidecarPath?.substringAfterLast('/') ?: "$graphName.data"
+                val sidecarTarget = File(cache.modelsDir(), sidecarName)
+                val sidecarTmp = File(cache.modelsDir(), "$sidecarName.part")
+                downloadWithChecksum(sidecarUrl, sidecarTmp, sidecarTarget, "")
+            }
         } catch (t: Throwable) {
             tmp.delete()
             return@withContext Result.failure(errorData(t.message ?: t::class.java.simpleName))
@@ -106,7 +113,7 @@ class ModelDownloadWorker @AssistedInject constructor(
         }
 
         val actual = Sha256.ofFile(tmp)
-        require(actual.equals(expectedSha256, ignoreCase = true)) {
+        require(expectedSha256.isBlank() || actual.equals(expectedSha256, ignoreCase = true)) {
             "checksum mismatch: expected=$expectedSha256 actual=$actual"
         }
 

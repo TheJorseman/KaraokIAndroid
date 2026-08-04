@@ -28,6 +28,8 @@ class CatalogMapper @Inject constructor() {
             licenseAccepted = entry.license.equals("MIT", ignoreCase = true) ||
                 entry.license.equals("Apache-2.0", ignoreCase = true),
             assetPath = entry.assetPath,
+            sidecarUrl = entry.sidecarUrl,
+            sidecarPath = entry.sidecarPath,
         )
     }
 }

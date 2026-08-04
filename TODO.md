@@ -11,7 +11,7 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - [x] Implementar transcripción nativa sobre WAV PCM 16-bit/16 kHz.
 - [ ] Verificar timestamps por token/palabra en un dispositivo Android con un modelo real.
 - [ ] Obtener pesos de separación de producción con URL, licencia y SHA-256 verificables.
-- [ ] Preferir Kim Vocal 2 si vuelve a estar disponible; si no, integrar un Mel-Band RoFormer público y compatible con Android/ONNX.
+- [x] Integrar un Mel-Band RoFormer público y compatible con ONNX Runtime como alternativa a Kim Vocal 2.
 - [ ] Completar el contrato de entrada/salida real del modelo de separación en `MdxNetSeparator`.
 - [ ] Reemplazar la máscara provisional de `processChunk` por la inferencia MDX-Net/RoFormer real.
 - [ ] Validar y corregir el overlap-add con canciones reales de distinta duración.
@@ -21,13 +21,14 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 
 - [ ] Decidir si el modelo Fast se distribuye mediante Asset Pack real o descarga inicial gestionada.
 - [ ] No distribuir el modelo sintético como modelo de producción.
-- [ ] Añadir fallback RoFormer solo cuando sus pesos y su formato ONNX sean compatibles con ORT Mobile.
+- [x] Añadir RoFormer FP16 como Fast/Balanced/HQ con URLs Hugging Face y sidecar `.onnx.data`.
 - [x] Abrir modelos ONNX descargados con archivo externo `.data` cuando ambos están lado a lado.
 - [x] Actualizar el catálogo con tamaños y checksums reales, eliminando URLs `example.invalid`.
 - [ ] Mostrar y persistir la aceptación de licencias restrictivas antes de usar los pesos correspondientes.
 
 ## Audio Y Media3
 
+- [x] Round-trip WAV real (decode, downmix, resample, write) en tests Python.
 - [ ] Probar extracción PCM en mp3, flac, wav, m4a, mp4 y mkv en dispositivos reales.
 - [ ] Validar resampling, downmix y duración frente a archivos multicanal.
 - [ ] Decidir si se compila `media3-decoder-ffmpeg` desde `androidx/media`; no añadirlo como dependencia Maven.
@@ -58,10 +59,11 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 
 ## Calidad Y Rendimiento
 
-- [ ] **PAUSADO** Corregir `scripts/models/compare_quantization.py`: `stft_packed()` produce `[channels, frames, freq, complex]`, mientras el comparador espera `[channels, freq, frames, complex]`; normalizar los ejes antes de generar `[1, 2050, 1101, 2]`.
-- [ ] **PAUSADO** Completar comparación RoFormer FP16 vs INT8 con SDR/cosine/MAE sobre el mismo STFT; conservar FP16 si la pérdida supera 2 dB.
-- [ ] **PAUSADO** Publicar los modelos aprobados en un repositorio HF propio con `hf upload` y actualizar el catálogo con URLs permanentes.
-- [ ] **PAUSADO** No marcar RoFormer INT8 como producción hasta verificar que el grafo cuantizado conserva el sidecar o que se genera un único archivo válido.
+- [x] Corregir el layout de ejes de `scripts/models/compare_quantization.py` antes de construir `[1, 2050, 1101, 2]`.
+- [x] Comparar RoFormer FP16 vs INT8 sobre el mismo STFT; resultado: INT8 rechazado porque ORT no carga el grafo, FP16 seleccionado.
+- [x] Determinar que la conversión INT8 actual de RoFormer es inválida en ORT (`DynamicQuantizeLinear` sobre `float16`); mantener FP16 hasta una conversión compatible.
+- [ ] **PAUSADO** Publicar una copia propia en HF con `hf upload`; actualmente el catálogo usa URLs públicas verificadas de `silverdaw` y `ggerganov`.
+- [x] No marcar RoFormer INT8 como producción: el grafo cuantizado se rechaza por `DynamicQuantizeLinear` sobre `float16`.
 - [ ] Ejecutar `python -m scripts.models.verify_models` con pesos de producción, no sintéticos.
 - [ ] Medir SDR de separación INT8 frente a FP32 con un conjunto de audio representativo.
 - [ ] Medir WER de Whisper cuantizado contra una referencia etiquetada.

@@ -19,6 +19,8 @@ data class CatalogEntry(
     @SerialName("license") val license: String,
     @SerialName("embedded_in_asset_pack") val embeddedInAssetPack: Boolean = false,
     @SerialName("asset_path") val assetPath: String? = null,
+    @SerialName("sidecar_url") val sidecarUrl: String? = null,
+    @SerialName("sidecar_path") val sidecarPath: String? = null,
     @SerialName("min_android_sdk") val minAndroidSdk: Int = 26,
     @SerialName("notes") val notes: String? = null,
 )

@@ -17,7 +17,7 @@ import com.karaokei.core.data.db.typeconverter.EnumConverters
         ModelEntity::class,
         ProcessingCacheEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(EnumConverters::class)

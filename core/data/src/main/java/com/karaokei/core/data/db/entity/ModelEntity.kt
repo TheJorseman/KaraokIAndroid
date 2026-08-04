@@ -30,6 +30,8 @@ data class ModelEntity(
     @ColumnInfo(name = "license") val license: String,
     @ColumnInfo(name = "license_accepted") val licenseAccepted: Boolean,
     @ColumnInfo(name = "asset_path") val assetPath: String? = null,
+    @ColumnInfo(name = "sidecar_url") val sidecarUrl: String? = null,
+    @ColumnInfo(name = "sidecar_path") val sidecarPath: String? = null,
 )
 
 enum class ModelTier { FAST, BALANCED, HQ }
