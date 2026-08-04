@@ -1,0 +1,213 @@
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+  weights:
+    complexity: 2
+    LongParameterList: 1
+    style: 1
+    comments: 0
+
+processors:
+  active: true
+  exclude:
+    - 'DetektAnnotationHilt'
+    - 'DetektAnnotationHiltAndroid'
+
+config:
+  validation: true
+  warningsAsErrors: false
+  checkExhaustiveness: false
+
+console-reports:
+  active: true
+  exclude:
+    - 'ProjectStatisticsReport'
+    - 'NotificationReport'
+    - 'FindingsReport'
+    - 'FileBasedFindingsReport'
+
+output-reports:
+  active: true
+
+comments:
+  active: true
+  CommentOverPrivateProperty:
+    active: false
+  CommentOverPrivateFunction:
+    active: false
+  UndocumentedPublicClass:
+    active: false
+  UndocumentedPublicFunction:
+    active: false
+  UndocumentedPublicProperty:
+    active: false
+
+complexity:
+  active: true
+  CognitiveComplexMethod:
+    threshold: 20
+  CyclomaticComplexMethod:
+    threshold: 15
+  LongMethod:
+    threshold: 80
+  LongParameterList:
+    active: true
+    functionThreshold: 7
+    constructorThreshold: 8
+    ignoreDefaultParameters: true
+    ignoreDataClasses: true
+  TooManyFunctions:
+    thresholdInFiles: 15
+    thresholdInClasses: 15
+    thresholdInInterfaces: 15
+    thresholdInObjects: 15
+    thresholdInEnums: 15
+    ignoreDeprecated: true
+    ignorePrivate: true
+    ignoreOverridden: true
+
+empty-blocks:
+  active: true
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '_|(ignore|expected).*'
+
+exceptions:
+  active: true
+  TooGenericExceptionCaught:
+    active: true
+    exceptionNames:
+      - 'ArrayIndexOutOfBoundsException'
+      - 'Error'
+      - 'Exception'
+      - 'IllegalMonitorStateException'
+      - 'NullPointerException'
+      - 'IndexOutOfBoundsException'
+      - 'RuntimeException'
+      - 'Throwable'
+  TooGenericExceptionThrown:
+    active: true
+    exceptionNames:
+      - 'Error'
+      - 'Exception'
+      - 'RuntimeException'
+      - 'Throwable'
+
+naming:
+  active: true
+  ClassNaming:
+    active: true
+  FunctionNaming:
+    active: true
+  VariableNaming:
+    active: true
+  PackageNaming:
+    active: true
+  TopLevelPropertyNaming:
+    active: true
+  ObjectPropertyNaming:
+    active: true
+
+performance:
+  active: true
+  ArrayPrimitive:
+    active: true
+  ForEachOnRange:
+    active: true
+  SpreadOperator:
+    active: true
+  UnnecessaryPartOfBinaryExpression:
+    active: true
+
+potential-bugs:
+  active: true
+  AvoidReferentialEquality:
+    active: true
+  CastToNullableType:
+    active: true
+  Deprecation:
+    active: true
+  ImplicitDefaultLocale:
+    active: true
+  MissingPackageDeclaration:
+    active: true
+  NullCheckOnMutableProperty:
+    active: true
+  UnnecessaryNotNullCheck:
+    active: true
+  UnnecessaryNotNullOperator:
+    active: true
+
+style:
+  active: true
+  CanBeNonNullable:
+    active: true
+  ClassOrdering:
+    active: true
+  DataClassContainsFunctions:
+    active: true
+  DataClassShouldBeImmutable:
+    active: true
+  DestructuringDeclarationWithTooManyEntries:
+    active: true
+    maxDestructuringEntries: 4
+  EqualsNullCall:
+    active: true
+  ExplicitItLambdaParameter:
+    active: true
+  ForbiddenComment:
+    active: true
+    values:
+      - reason: 'Use TODO only for actionable items, not "fix me later"'
+        value: 'FIXME:'
+  MagicNumber:
+    active: true
+    ignoreNumbers: ['-1', '0', '1', '2', '100', '1000']
+    ignoreHashCodeFunction: true
+  MaxLineLength:
+    active: true
+    maxLineLength: 140
+    excludePackageStatements: true
+    excludeImportStatements: true
+  ModifierOrder:
+    active: true
+  NewLineAtEndOfFile:
+    active: true
+  NoTabs:
+    active: true
+  OptionalAbstractKeyword:
+    active: true
+  OptionalUnit:
+    active: true
+  PreferToOverPairSyntax:
+    active: true
+  RedundantVisibilityModifierRule:
+    active: true
+  ReturnCount:
+    active: true
+    max: 3
+  SafeCast:
+    active: true
+  ThrowsCount:
+    active: true
+    max: 2
+  UnusedImports:
+    active: true
+  UnusedPrivateMember:
+    active: true
+  UseCheckOrError:
+    active: true
+  UseDataClass:
+    active: true
+  UseRequire:
+    active: true
+  UselessCallOnNotNull:
+    active: true
+  UtilityClassWithPublicConstructor:
+    active: true
+  VarCouldBeVal:
+    active: true
+  WildcardImport:
+    active: true
+    excludeImports:
+      - 'java.util.*'

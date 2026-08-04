@@ -1,27 +1,88 @@
-# Compiled class file
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Gradle
+.gradle/
+build/
+out/
+.kotlin/
+captures/
+.cxx/
+
+# Android Studio
+local.properties
+*.hprof
+.externalNativeBuild
+*.apk
+*.aab
+*.ap_
+*.dex
 *.class
+bin/
+gen/
+release/
 
-# Log file
+# CMake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# NDK / native
+obj/
+
+# Test / coverage
+coverage/
+*.lcov
+test-output/
+test-results/
+reports/
+
+# Logs
 *.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
 
-# Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
-.kotlin/
+# Keystores
+*.jks
+*.keystore
+
+# Network captures / proxy databases
+mitm_mcp_traffic.db
+mitmproxy/
+
+# Python (utility scripts)
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Misc
+.tmp/
+.cache/
+
+# scripts/models: generated artifacts
+scripts/download_cache/
+scripts/build_output/
+scripts/fixtures/calibration/
+# scripts/fixtures/test_sweep.wav is committed (small, deterministic).
+
+# whisper.cpp is fetched at a pinned commit by scripts/fetch_whisper.ps1.
+third_party/whisper.cpp/
+
+# Model binaries are generated/downloaded separately; do not commit
+# multi-megabyte ONNX, ggml, external-data, or checkpoint artifacts.
+fast-model-assetpack/src/main/assets/**/*.onnx
+fast-model-assetpack/src/main/assets/**/*.bin
+fast-model-assetpack/src/main/assets/**/*.data
+fast-model-assetpack/src/main/assets/**/*.ckpt

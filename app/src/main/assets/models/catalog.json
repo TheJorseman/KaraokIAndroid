@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "updated_at": "2026-08-04T00:00:00Z",
+  "entries": [
+    {
+      "id": "kim-vocal-2-int8-fast",
+      "name": "MDX-Net Kim Vocal 2 (INT8)",
+      "tier": "FAST",
+      "type": "SEPARATION",
+      "url": "",
+      "size_bytes": 25165824,
+      "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "license": "CC-BY-NC-4.0",
+      "embedded_in_asset_pack": false,
+      "asset_path": "separation/kim_vocal_2_int8.onnx",
+      "notes": "Sin URL pública todavía. Cuando aparezca un mirror estable, este modelo ocupará el tier Fast."
+    },
+    {
+      "id": "mel-band-roformer-balanced-sep",
+      "name": "Mel-Band RoFormer vocal (silverdaw)",
+      "tier": "BALANCED",
+      "type": "SEPARATION",
+      "url": "",
+      "size_bytes": 746498840,
+      "checksum_sha256": "b08cfc80905e3560a4dd5d30f641299a47dd96d309ebbe9524d9d6c9d2a0356f",
+      "license": "MIT",
+      "embedded_in_asset_pack": true,
+      "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
+      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
+      "notes": "Bytes validados por scripts/models/download_roformer.py. El sidecar .data es obligatorio junto al grafo."
+    },
+    {
+      "id": "whisper-tiny-q5-1-fast",
+      "name": "Whisper tiny (Q5_1, English)",
+      "tier": "FAST",
+      "type": "TRANSCRIPTION",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin",
+      "size_bytes": 32166155,
+      "checksum_sha256": "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b",
+      "license": "MIT",
+      "embedded_in_asset_pack": false,
+      "asset_path": "transcription/ggml-tiny.en-q5_1.bin"
+    },
+    {
+      "id": "whisper-base-q5-1-balanced-tr",
+      "name": "Whisper base (Q5_1, multi-language)",
+      "tier": "BALANCED",
+      "type": "TRANSCRIPTION",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin",
+      "size_bytes": 59707625,
+      "checksum_sha256": "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+      "license": "MIT",
+      "embedded_in_asset_pack": false,
+      "asset_path": "transcription/ggml-base-q5_1.bin"
+    },
+    {
+      "id": "whisper-small-q5-1-hq-tr",
+      "name": "Whisper small (Q5_1, multi-language)",
+      "tier": "HQ",
+      "type": "TRANSCRIPTION",
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin",
+      "size_bytes": 190085487,
+      "checksum_sha256": "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+      "license": "MIT",
+      "embedded_in_asset_pack": false,
+      "asset_path": "transcription/ggml-small-q5_1.bin"
+    }
+  ]
+}

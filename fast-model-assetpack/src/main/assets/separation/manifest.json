@@ -1,0 +1,33 @@
+{
+  "model_id": "mel-band-roformer-vocals",
+  "source": "silverdaw/mel-band-roformer-vocals-onnx",
+  "license": "MIT",
+  "sidecar": true,
+  "sample_rate": 44100,
+  "n_fft": 2048,
+  "hop": 441,
+  "input_shape": [
+    1,
+    2050,
+    1101,
+    2
+  ],
+  "output_shape": [
+    1,
+    2050,
+    1101,
+    2
+  ],
+  "files": {
+    "syhft_core_folded_fp16_webgpu.onnx": {
+      "path": "C:\\Users\\migue\\OneDrive\\Documentos\\GitHub\\KaraokIAndroid\\fast-model-assetpack\\src\\main\\assets\\separation\\syhft_core_folded_fp16_webgpu.onnx",
+      "size_bytes": 5308300,
+      "sha256": "dde2bfe8f85d2c12efa24ce4d45cc13e8709b8a72e277a93f130d496d948e918"
+    },
+    "syhft_core_folded_fp16_webgpu.onnx.data": {
+      "path": "C:\\Users\\migue\\OneDrive\\Documentos\\GitHub\\KaraokIAndroid\\fast-model-assetpack\\src\\main\\assets\\separation\\syhft_core_folded_fp16_webgpu.onnx.data",
+      "size_bytes": 741190540,
+      "sha256": "b08cfc80905e3560a4dd5d30f641299a47dd96d309ebbe9524d9d6c9d2a0356f"
+    }
+  }
+}

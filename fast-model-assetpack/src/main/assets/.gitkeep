@@ -1,0 +1,8 @@
+# Placeholder folder for the embedded Fast tier models.
+# T2.5 will drop the actual model files here:
+#   separation/kim_vocal_2_int8.onnx     (MDX-Net Kim Vocal 2, INT8 quantized)
+#   transcription/ggml-tiny.en-q5_1.bin  (Whisper tiny, Q5_1 quantized, English)
+#
+# Files in this folder are referenced by the Asset Pack's asset listing
+# and are NOT committed to the repository (their size is in the tens of MB).
+# The .gitkeep below prevents the directory from being pruned.
