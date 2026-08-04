@@ -29,8 +29,8 @@ class UserPreferences @Inject constructor(
     )
 
     val selectedTier: Flow<ModelTier> = dataStore.data.map { prefs ->
-        val raw = prefs[PreferencesKeys.SELECTED_TIER] ?: return@map ModelTier.FAST
-        runCatching { ModelTier.valueOf(raw) }.getOrDefault(ModelTier.FAST)
+        val raw = prefs[PreferencesKeys.SELECTED_TIER] ?: return@map ModelTier.BALANCED
+        runCatching { ModelTier.valueOf(raw) }.getOrDefault(ModelTier.BALANCED)
     }
 
     val preferredLanguage: Flow<String> = dataStore.data.map { prefs ->

@@ -20,6 +20,9 @@ interface ModelDao {
     @Query("SELECT * FROM models WHERE type = :type")
     suspend fun findByType(type: ModelType): List<ModelEntity>
 
+    @Query("SELECT * FROM models WHERE type = :type AND local_path IS NOT NULL ORDER BY downloaded_at DESC")
+    suspend fun findDownloadedByType(type: ModelType): List<ModelEntity>
+
     @Query("SELECT * FROM models WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ModelEntity?
 

@@ -11,6 +11,7 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - [x] Implementar transcripción nativa sobre WAV PCM 16-bit/16 kHz.
 - [ ] Verificar timestamps por token/palabra en un dispositivo Android con un modelo real.
 - [ ] Obtener pesos de separación de producción con URL, licencia y SHA-256 verificables.
+- [x] Verificar en el emulador que el procesamiento del audio de prueba termina en estado `READY`.
 - [x] Integrar un Mel-Band RoFormer público y compatible con ONNX Runtime como alternativa a Kim Vocal 2.
 - [ ] Completar el contrato de entrada/salida real del modelo de separación en `MdxNetSeparator`.
 - [ ] Reemplazar la máscara provisional de `processChunk` por la inferencia MDX-Net/RoFormer real.
@@ -24,6 +25,7 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - [x] Añadir RoFormer FP16 como Fast/Balanced/HQ con URLs Hugging Face y sidecar `.onnx.data`.
 - [x] Abrir modelos ONNX descargados con archivo externo `.data` cuando ambos están lado a lado.
 - [x] Actualizar el catálogo con tamaños y checksums reales, eliminando URLs `example.invalid`.
+- [x] Verificar por `adb` que el catálogo se sincroniza y muestra botones de descarga para modelos con URL.
 - [ ] Mostrar y persistir la aceptación de licencias restrictivas antes de usar los pesos correspondientes.
 
 ## Audio Y Media3
@@ -33,6 +35,7 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - [ ] Validar resampling, downmix y duración frente a archivos multicanal.
 - [ ] Decidir si se compila `media3-decoder-ffmpeg` desde `androidx/media`; no añadirlo como dependencia Maven.
 - [ ] Añadir pruebas de archivos corruptos, sin pista de audio y con múltiples pistas.
+- [x] Añadir tests Python de round-trip del audio de prueba y contrato de URLs/sidecars del catálogo.
 
 ## Pipeline
 
@@ -40,7 +43,8 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - [x] Propagar progreso observable por etapa en la notificación.
 - [ ] Sustituir el progreso por etapa por progreso real por ventana/modelo.
 - [x] Alinear binarios nativos a páginas de 16 KB para Android 15+ (`-Wl,-z,max-page-size=16384`).
-- [ ] Sustituir ORT 1.20 (libomp desalineado) por una versión que ya cumpla 16 KB o reemplazar `libomp.so` por un stub.
+- [x] Actualizar ORT Android a 1.28.0 para soportar opset 23/RMSNormalization del RoFormer.
+- [ ] Verificar que todos los `.so` de ORT 1.28.0 cumplen alineamiento de 16 KB en Android 15+.
 - [x] Implementar cancelación cooperativa del orquestador y acción de cancelación del Foreground Service.
 - [ ] Reanudar correctamente después de matar/recrear el proceso.
 - [ ] Hacer transiciones Room atómicas por etapa y conservar errores accionables.

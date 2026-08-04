@@ -1,10 +1,25 @@
 {
-  "version": 2,
+  "version": 4,
   "updated_at": "2026-08-05T00:00:00Z",
   "entries": [
     {
-      "id": "mel-band-roformer-vocals",
-      "name": "Mel-Band RoFormer vocal (FP16)",
+      "id": "mel-band-roformer-vocals-fast-sep",
+      "name": "Mel-Band RoFormer vocal (Fast)",
+      "tier": "FAST",
+      "type": "SEPARATION",
+      "url": "",
+      "size_bytes": 0,
+      "checksum_sha256": "",
+      "license": "MIT",
+      "embedded_in_asset_pack": false,
+      "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
+      "sidecar_url": "",
+      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
+      "notes": "Pendiente: cuantización viable del RoFormer para tier Fast. Mientras tanto, usa Balanced."
+    },
+    {
+      "id": "mel-band-roformer-vocals-balanced-sep",
+      "name": "Mel-Band RoFormer vocal (Balanced)",
       "tier": "BALANCED",
       "type": "SEPARATION",
       "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
@@ -14,8 +29,7 @@
       "embedded_in_asset_pack": false,
       "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
       "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
-      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
-      "notes": "Modelo único para los tres tiers; FP16 de ~707 MB. INT8 no soportado por ORT en este grafo."
+      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data"
     },
     {
       "id": "whisper-tiny-q5-1-fast",

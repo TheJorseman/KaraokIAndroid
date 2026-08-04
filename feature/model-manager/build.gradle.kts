@@ -36,4 +36,9 @@ dependencies {
     ksp(libs.hilt.work.compiler)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.material3)
+
+    testImplementation(libs.junit4)
+    testImplementation(libs.truth)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

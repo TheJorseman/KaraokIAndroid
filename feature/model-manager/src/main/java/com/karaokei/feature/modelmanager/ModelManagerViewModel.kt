@@ -148,23 +148,23 @@ class ModelManagerViewModel @Inject constructor(
         prompt: Boolean,
         error: String?,
     ): TierUiState {
-        val byType: (ModelType) -> ModelEntity? = { type ->
-            models.firstOrNull { it.type == type }
+        val byTierType: (ModelTier, ModelType) -> ModelEntity? = { t, type ->
+            models.firstOrNull { it.tier == t && it.type == type }
         }
         val options = ModelTier.values().map { t ->
-            val sep = byType(ModelType.SEPARATION)
-            val tr = byType(ModelType.TRANSCRIPTION)
+            val sep = byTierType(t, ModelType.SEPARATION)
+            val tr = byTierType(t, ModelType.TRANSCRIPTION)
             TierOption(
                 tier = t,
                 separation = sep?.toStatus(accepted) ?: ModelEntryStatus(
                     entity = placeholderEntity(t, ModelType.SEPARATION),
                     canDownload = false,
-                    reasonCannotDownload = "Sin modelo de separación en el catálogo",
+                    reasonCannotDownload = "Sin modelo de separación para el tier ${t.displayName()}",
                 ),
                 transcription = tr?.toStatus(accepted) ?: ModelEntryStatus(
                     entity = placeholderEntity(t, ModelType.TRANSCRIPTION),
                     canDownload = false,
-                    reasonCannotDownload = "Sin modelo de transcripción en el catálogo",
+                    reasonCannotDownload = "Sin modelo de transcripción para el tier ${t.displayName()}",
                 ),
             )
         }
@@ -175,6 +175,12 @@ class ModelManagerViewModel @Inject constructor(
             showLicensePrompt = prompt,
             error = error,
         )
+    }
+
+    private fun ModelTier.displayName(): String = when (this) {
+        ModelTier.FAST -> "Fast"
+        ModelTier.BALANCED -> "Balanced"
+        ModelTier.HQ -> "HQ"
     }
 
     private fun ModelEntity.toStatus(accepted: Boolean): ModelEntryStatus {
@@ -209,6 +215,9 @@ class ModelManagerViewModel @Inject constructor(
             url = null,
             license = "",
             licenseAccepted = false,
+            assetPath = null,
+            sidecarUrl = null,
+            sidecarPath = null,
         )
 
     sealed interface Effect {
