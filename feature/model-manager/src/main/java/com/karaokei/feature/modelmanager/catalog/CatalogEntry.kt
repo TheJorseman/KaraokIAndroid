@@ -23,6 +23,7 @@ data class CatalogEntry(
     @SerialName("sidecar_path") val sidecarPath: String? = null,
     @SerialName("min_android_sdk") val minAndroidSdk: Int = 26,
     @SerialName("notes") val notes: String? = null,
+    @SerialName("tier_class") val tierClass: String? = null,
 )
 
 @Serializable

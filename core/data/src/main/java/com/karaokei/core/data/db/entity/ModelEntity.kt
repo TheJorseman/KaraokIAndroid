@@ -32,6 +32,8 @@ data class ModelEntity(
     @ColumnInfo(name = "asset_path") val assetPath: String? = null,
     @ColumnInfo(name = "sidecar_url") val sidecarUrl: String? = null,
     @ColumnInfo(name = "sidecar_path") val sidecarPath: String? = null,
+    @ColumnInfo(name = "tier_class") val tierClass: String? = null,
+    @ColumnInfo(name = "notes") val notes: String? = null,
 )
 
 enum class ModelTier { FAST, BALANCED, HQ }

@@ -76,6 +76,7 @@ scripts/download_cache/
 scripts/build_output/
 scripts/fixtures/calibration/
 # scripts/fixtures/test_sweep.wav is committed (small, deterministic).
+# scripts/fixtures/te_juro_que_te_amo.mp3 IS committed (real song bundled in APK).
 
 # whisper.cpp is fetched at a pinned commit by scripts/fetch_whisper.ps1.
 third_party/whisper.cpp/
@@ -86,3 +87,12 @@ fast-model-assetpack/src/main/assets/**/*.onnx
 fast-model-assetpack/src/main/assets/**/*.bin
 fast-model-assetpack/src/main/assets/**/*.data
 fast-model-assetpack/src/main/assets/**/*.ckpt
+
+# Emulator DB dumps created by scripts/devtools/dump_emulator_db.py
+download_cache/
+
+# Local dev artifacts
+karaoke.db
+karaoke.db.combined
+*.wal
+*.pyc

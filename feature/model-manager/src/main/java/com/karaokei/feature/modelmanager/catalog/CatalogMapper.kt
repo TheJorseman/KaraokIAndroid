@@ -30,6 +30,8 @@ class CatalogMapper @Inject constructor() {
             assetPath = entry.assetPath,
             sidecarUrl = entry.sidecarUrl,
             sidecarPath = entry.sidecarPath,
+            tierClass = entry.tierClass,
+            notes = entry.notes,
         )
     }
 }

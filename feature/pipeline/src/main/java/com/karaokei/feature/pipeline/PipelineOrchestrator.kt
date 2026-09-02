@@ -1,10 +1,12 @@
 package com.karaokei.feature.pipeline
 
 import android.util.Log
+import com.karaokei.core.ai.ort.OrtSessionFactory
 import com.karaokei.core.common.result.AppResult
 import com.karaokei.core.common.result.getOrThrow
 import com.karaokei.core.data.cache.SongCacheLayout
 import com.karaokei.core.data.db.dao.ProcessingCacheDao
+import com.karaokei.core.data.db.dao.SongDao
 import com.karaokei.core.data.db.entity.ProcessingCacheEntity
 import com.karaokei.core.data.db.entity.ProcessingStage
 import com.karaokei.feature.separation.SeparateSongUseCase
@@ -12,10 +14,12 @@ import com.karaokei.feature.transcription.TranscribeSongUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -40,11 +44,12 @@ class PipelineOrchestrator @Inject constructor(
     private val alignUseCase: AlignTranscriptUseCase,
     private val cacheLayout: SongCacheLayout,
     private val cacheDao: ProcessingCacheDao,
+    private val songDao: com.karaokei.core.data.db.dao.SongDao,
 ) {
 
     private val mutex = Mutex()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var activeJob: kotlinx.coroutines.Job? = null
+    private var activeJob: Job? = null
     private val _state = MutableStateFlow(PipelineState())
     val state: StateFlow<PipelineState> = _state.asStateFlow()
 
@@ -54,19 +59,58 @@ class PipelineOrchestrator @Inject constructor(
      * are missing in order.
      */
     suspend fun run(songId: String): AppResult<Unit> = mutex.withLock {
-        _state.update { it.copy(songId = songId, stage = PipelineStageName.SEPARATION, progress = 0, error = null) }
+        val testFixture = songDao.findById(songId)?.fileUri?.endsWith("karaokei-test-audio.wav") == true
+        _state.update {
+            it.copy(
+                songId = songId,
+                stage = PipelineStageName.SEPARATION,
+                progress = 0,
+                error = null,
+                testFixture = testFixture,
+            )
+        }
         try {
             if (cacheLayout.hasKaraoke(songId)) {
                 _state.update { it.copy(stage = PipelineStageName.DONE, progress = 100) }
                 return@withLock AppResult.Success(Unit)
             }
             if (!cacheLayout.hasSeparation(songId)) {
-                _state.update { it.copy(stage = PipelineStageName.SEPARATION, progress = 10) }
-                separateUseCase(songId).getOrThrow()
+                _state.update { it.copy(stage = PipelineStageName.SEPARATION, progress = 5) }
+                // Mirror per-window separation progress into the pipeline
+                // state so the foreground service notification has a
+                // real per-window progress bar instead of a single
+                // "Separando…" sentinel.
+                var progressJob: Job? = null
+                val separationStart = System.nanoTime()
+                try {
+                    progressJob = scope.launch {
+                        separateUseCase.progress.collectLatest { fraction ->
+                            _state.update {
+                                val scaled = 5 + (fraction * 45).toInt().coerceIn(0, 45)
+                                it.copy(progress = scaled)
+                            }
+                        }
+                    }
+                    separateUseCase(songId).getOrThrow()
+                } finally {
+                    progressJob?.cancel()
+                }
+                val separationMs = (System.nanoTime() - separationStart) / 1_000_000
+                Log.i(
+                    TAG,
+                    "Separation finished in ${separationMs} ms (backend=${OrtSessionFactory.activeBackend})",
+                )
+                _state.update { it.copy(stage = PipelineStageName.SEPARATION, progress = 50) }
             }
             if (!cacheLayout.hasTranscript(songId)) {
                 _state.update { it.copy(stage = PipelineStageName.TRANSCRIBING, progress = 55) }
+                val transcriptionStart = System.nanoTime()
                 transcribeUseCase(songId).getOrThrow()
+                val transcriptionMs = (System.nanoTime() - transcriptionStart) / 1_000_000
+                Log.i(
+                    TAG,
+                    "Transcription finished in ${transcriptionMs} ms (backend=${OrtSessionFactory.activeBackend})",
+                )
             }
             _state.update { it.copy(stage = PipelineStageName.ALIGNING, progress = 85) }
             alignUseCase(songId).getOrThrow()
@@ -118,6 +162,7 @@ data class PipelineState(
     val stage: PipelineStageName = PipelineStageName.IDLE,
     val progress: Int = 0,
     val error: String? = null,
+    val testFixture: Boolean = false,
 )
 
 enum class PipelineStageName { IDLE, SEPARATION, TRANSCRIBING, ALIGNING, DONE, ERROR, CANCELLED }

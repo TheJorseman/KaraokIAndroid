@@ -139,7 +139,9 @@ class WhisperTranscriber @Inject constructor(
         return target.absolutePath
     }
 
-    private fun inferAssetPath(model: ModelEntity): String = "transcription/${model.id}.bin"
+    private fun inferAssetPath(model: ModelEntity): String =
+        model.assetPath?.takeIf { it.isNotBlank() }
+            ?: "transcription/${model.id}.bin"
 }
 
 /**

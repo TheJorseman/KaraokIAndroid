@@ -5,6 +5,10 @@ Mirrors the Kotlin `AudioExtractor.decodeToPcm()` + `downmixToMono()` +
 pipeline behaviour is regression-tested without booting the
 emulator. The fixture `scripts/fixtures/test_sweep.wav` is the same
 file the Android app seeds on first launch.
+
+Also exercises `scripts/fixtures/te_juro_que_te_amo.mp3` (the real
+song used as the end-to-end target) through the same pipeline to make
+sure the helpers behave on a non-synthetic source.
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import soundfile as sf
 
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "test_sweep.wav"
+REAL_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "te_juro_que_te_amo.mp3"
 
 
 def _stereo_synthetic(duration_s: float = 3.0, rate: int = 16000) -> np.ndarray:
@@ -97,3 +102,59 @@ def test_downmix_then_resample_pipeline_round_trip(tmp_path: Path) -> None:
     back, sr = _read_wav_pcm16_mono(target)
     assert sr == 16000
     assert len(back) == int(round(44100 * 2 * 16000 / 44100))
+
+
+@pytest.mark.skipif(not REAL_FIXTURE.exists(), reason="te_juro_que_te_amo.mp3 fixture missing")
+def test_real_song_fixture_runs_through_pipeline(tmp_path: Path) -> None:
+    """Round-trips the real song through the same code path the
+    Android `AudioExtractor` uses: decode → downmix → resample 44.1→16
+    kHz → write mono WAV → re-read.
+
+    The assertions are deliberately loose: real audio has DC bias and
+    lossy MP3 encoding. We just confirm the pipeline produces a
+    non-empty 16 kHz / mono file with the expected shape.
+    """
+    pcm, sr = sf.read(str(REAL_FIXTURE), always_2d=False)
+    assert sr > 0
+    if pcm.ndim > 1:
+        pcm = pcm.mean(axis=-1).astype(np.float32)
+    else:
+        pcm = pcm.astype(np.float32)
+    assert pcm.size > 16000, "fixture is suspiciously short"
+
+    mono = _downmix_to_mono(pcm if pcm.ndim == 1 else np.stack([pcm, pcm], axis=-1))
+    target = tmp_path / "te_juro_pipeline_out.wav"
+    _write_wav_pcm16_mono(target, _resample(mono, sr, 16000), 16000)
+    back, out_sr = _read_wav_pcm16_mono(target)
+    assert out_sr == 16000
+    assert back.ndim == 1
+    assert back.size > 16000
+    assert np.max(np.abs(back)) <= 1.001
+
+
+@pytest.mark.skipif(not REAL_FIXTURE.exists(), reason="te_juro_que_te_amo.mp3 fixture missing")
+def test_real_song_up_sample_to_44_1k_stereo_shape() -> None:
+    """Mirrors the HTDemucs pre-processing used by the Android app:
+    mono 16 kHz PCM → mono 44.1 kHz → stereo 44.1 kHz. We assert the
+    output shape `(2, samples)` matches the ORT graph's `[batch=1,
+    channels=2, samples]` contract (after prepending a batch
+    dimension) and that the broadcast is lossless on both channels.
+    """
+    pcm, sr = sf.read(str(REAL_FIXTURE), always_2d=False)
+    if pcm.ndim > 1:
+        mono16k = _downmix_to_mono(pcm)
+    else:
+        mono16k = pcm.astype(np.float32)
+    mono16k = _resample(mono16k, sr, 16000)
+
+    expected_len = int(round(mono16k.size * 44100 / 16000))
+    mono44_1k = _resample(mono16k, 16000, 44100)
+    assert abs(len(mono44_1k) - expected_len) <= 1
+
+    # ORT contract: [batch=1, channels=2, samples] with values
+    # `[L0, L1, ..., Ln-1, R0, R1, ..., Rn-1]`. Build it from scratch
+    # so the data layout is explicit.
+    stereo = np.stack([mono44_1k, mono44_1k], axis=0).astype(np.float32)
+    as_graph_input = stereo[None, :, :]
+    assert as_graph_input.shape == (1, 2, mono44_1k.size)
+    np.testing.assert_array_equal(as_graph_input[0, 0], as_graph_input[0, 1])

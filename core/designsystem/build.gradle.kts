@@ -17,6 +17,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":feature:pipeline"))
+
     implementation(platform(libs.androidx.compose.bom))
     api(libs.androidx.compose.ui)
     api(libs.androidx.compose.ui.graphics)

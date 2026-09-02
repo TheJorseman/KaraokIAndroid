@@ -29,8 +29,11 @@ class UserPreferences @Inject constructor(
     )
 
     val selectedTier: Flow<ModelTier> = dataStore.data.map { prefs ->
-        val raw = prefs[PreferencesKeys.SELECTED_TIER] ?: return@map ModelTier.BALANCED
-        runCatching { ModelTier.valueOf(raw) }.getOrDefault(ModelTier.BALANCED)
+        // Default to FAST so the bundled MDX-Net Karaoke 2 (Fast tier)
+        // is the first thing users hit on a fresh install. BALANCED
+        // and HQ still work when selected explicitly.
+        val raw = prefs[PreferencesKeys.SELECTED_TIER] ?: return@map ModelTier.FAST
+        runCatching { ModelTier.valueOf(raw) }.getOrDefault(ModelTier.FAST)
     }
 
     val preferredLanguage: Flow<String> = dataStore.data.map { prefs ->

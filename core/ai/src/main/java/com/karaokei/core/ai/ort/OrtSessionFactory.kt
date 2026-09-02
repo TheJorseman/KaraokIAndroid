@@ -11,9 +11,19 @@ import java.util.EnumSet
 /**
  * Builds ONNX Runtime sessions with the right Execution Provider stack.
  *
- * MVP stack:
- *  - XNNPACK (CPU optimised, default).
- *  - NNAPI (legacy fallback, only if XNNPACK is unavailable or fails).
+ * The available providers are:
+ *  - `XNNPACK` — CPU-optimised via XNNPACK, the default fallback.
+ *  - `NNAPI`   — Android Neural Networks API. Offloads to the device's
+ *                NPU/GPU/DSP when the model graph is supported. Falls
+ *                back to CPU otherwise.
+ *  - `CPU`     — Vanilla CPU execution. The slowest but most
+ *                portable; useful for diagnostic baselines.
+ *
+ * The active backend is set by [activeBackend] (default: AUTO →
+ * XNNPACK with NNAPI as a fallback). The user can override it at
+ * runtime via `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU"
+ * | "XNNPACK" | "AUTO")` to compare precision / latency on a real
+ * device.
  *
  * QNN (Qualcomm NPU) is documented as a post-MVP item — see
  * `docs/post-mvp.md`. The Qualcomm AI Engine SDK is required and
@@ -22,27 +32,31 @@ import java.util.EnumSet
  */
 object OrtSessionFactory {
 
-    /**
-     * Order matters: providers earlier in the list are preferred.
-     * XNNPACK is always present in modern ORT builds; NNAPI is gated
-     * behind an Android API check.
-     */
-    private val preferredProviders: List<String> = buildList {
-        add("XNNPACK")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            add("NNAPI")
-        }
+    enum class Backend {
+        AUTO,    // XNNPACK + NNAPI fallback (production default)
+        XNNPACK, // CPU only, XNNPACK-optimised
+        CPU,     // CPU only, plain ORT CPU EP
+        NNAPI,   // NNAPI only
     }
+
+    @Volatile var activeBackend: Backend = Backend.AUTO
 
     fun createSessionOptions(environment: OrtEnvironment): AppResult<OrtSession.SessionOptions> {
         return runCatchingResult {
             val options = OrtSession.SessionOptions()
             options.setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-            preferredProviders.forEach { providerName ->
+            val backends: List<String> = when (activeBackend) {
+                Backend.AUTO -> listOf("XNNPACK") + nnapiIfAvailable()
+                Backend.XNNPACK -> listOf("XNNPACK")
+                Backend.CPU -> listOf("CPU")
+                Backend.NNAPI -> listOf("NNAPI")
+            }
+            backends.forEach { providerName ->
                 try {
                     when (providerName) {
                         "XNNPACK" -> options.addXnnpack(mapOf("intra_op_num_threads" to "4"))
                         "NNAPI" -> options.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16))
+                        "CPU" -> Unit // CPU is the ORT default; no explicit registration
                         else -> Unit
                     }
                 } catch (t: Throwable) {
@@ -59,4 +73,8 @@ object OrtSessionFactory {
             }
         }
     }
+
+    private fun nnapiIfAvailable(): List<String> =
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) listOf("NNAPI")
+        else emptyList()
 }

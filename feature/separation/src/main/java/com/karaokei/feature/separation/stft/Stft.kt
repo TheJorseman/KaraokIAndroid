@@ -26,30 +26,38 @@ class Stft(
     val numBins: Int = windowSize / 2 + 1
     private val window: FloatArray = hannWindow(windowSize)
 
-    /** O(N log N) DFT using a precomputed twiddle table. */
+    /**
+     * Forward STFT returning the full per-frame complex spectrogram
+     * (real+imag packed per bin) so callers can build the dense
+     * `[frames, numBins, complex]` tensors that MDX-Net / RoFormer
+     * consume. Output shape: `[numFrames][2 * numBins]` where for
+     * each frame `out[2*k]` = real and `out[2*k+1]` = `-imag`
+     * (numpy `rfft` convention).
+     */
     fun transform(samples: FloatArray): Array<FloatArray> {
-        val out = Array(numBins) { FloatArray(2) }
-        val buffer = FloatArray(windowSize)
-        for (frame in 0 until numFrames(samples.size)) {
+        val frames = numFrames(samples.size)
+        val out = Array(frames) { FloatArray(2 * numBins) }
+        val buffer = FloatArray(windowSize * 2)
+        for (frame in 0 until frames) {
             val start = frame * hopSize
             for (i in 0 until windowSize) {
                 val sample = if (start + i < samples.size) samples[start + i] else 0f
-                buffer[i] = sample * window[i]
+                buffer[2 * i] = sample * window[i]
             }
             dftInPlace(buffer, out, frame)
         }
         return out
     }
 
-    private fun dftInPlace(window: FloatArray, out: Array<FloatArray>, frame: Int) {
+    private fun dftInPlace(buffer: FloatArray, out: Array<FloatArray>, frame: Int) {
         // Use a radix-2 Cooley-Tukey when windowSize is a power of two,
         // which it is by default (2048). Falls back to a naive O(N^2)
         // DFT otherwise.
         if ((windowSize and (windowSize - 1)) == 0) {
-            fftInPlace(window)
+            fftInPlace(buffer)
             for (k in 0 until numBins) {
-                out[frame][0] = window[2 * k]
-                out[frame][1] = -window[2 * k + 1]
+                out[frame][2 * k] = buffer[2 * k]
+                out[frame][2 * k + 1] = -buffer[2 * k + 1]
             }
         } else {
             for (k in 0 until numBins) {
@@ -57,16 +65,111 @@ class Stft(
                 var im = 0f
                 val angle = -2.0 * Math.PI * k / windowSize
                 for (n in 0 until windowSize) {
-                    re += window[n] * cos(angle * n).toFloat()
-                    im += window[n] * sin(angle * n).toFloat()
+                    re += buffer[2 * n] * cos(angle * n).toFloat()
+                    im += buffer[2 * n] * sin(angle * n).toFloat()
                 }
-                out[frame][0] = re
-                out[frame][1] = im
+                out[frame][2 * k] = re
+                out[frame][2 * k + 1] = -im
             }
         }
     }
 
     fun numFrames(samples: Int): Int = ((samples - windowSize) / hopSize).coerceAtLeast(0) + 1
+
+    /**
+     * Inverse STFT. Reconstructs a time-domain signal from a complex
+     * spectrogram by inverse FFT, windowing, and overlap-add with the
+     * Hann window-correction factor (3/8 for periodic Hann at 50%
+     * overlap).
+     *
+     * @param real 2-D array `[numFrames][numBins]` of real parts.
+     * @param imag 2-D array `[numFrames][numBins]` of imaginary parts.
+     * @param expectedLength The expected number of samples. The output
+     * is cropped to this length so trailing zero-pad artefacts are
+     * dropped.
+     */
+    fun inverse(real: Array<FloatArray>, imag: Array<FloatArray>, expectedLength: Int): FloatArray {
+        val numFrames = real.size
+        val out = FloatArray(expectedLength + windowSize)
+        val weight = FloatArray(expectedLength + windowSize)
+        val buffer = FloatArray(windowSize * 2)
+        for (frame in 0 until numFrames) {
+            // `transform` writes `re - i*im` (numpy convention); flip
+            // the imaginary sign so the FFT operates in the internal
+            // `+i` convention.
+            for (k in 0 until numBins) {
+                buffer[2 * k] = real[frame][k]
+                buffer[2 * k + 1] = -imag[frame][k]
+            }
+            for (k in numBins until windowSize) {
+                val mirrored = windowSize - k
+                buffer[2 * k] = real[frame][mirrored]
+                buffer[2 * k + 1] = imag[frame][mirrored]
+            }
+            inverseFftInPlace(buffer)
+            val start = frame * hopSize
+            for (i in 0 until windowSize) {
+                val sample = buffer[2 * i] * window[i]
+                val idx = start + i
+                if (idx < out.size) {
+                    out[idx] += sample
+                    weight[idx] += window[i] * window[i]
+                }
+            }
+        }
+        for (i in out.indices) {
+            if (weight[i] > 1e-9f) out[i] /= weight[i]
+        }
+        return out.copyOfRange(0, expectedLength.coerceAtMost(out.size))
+    }
+
+    /**
+     * Same as [inverse] but takes a single packed buffer `[numFrames][2 * numBins]`
+     * (alternating real/imag per bin) for slightly cheaper construction.
+     */
+    fun inverse(packed: Array<FloatArray>, expectedLength: Int): FloatArray {
+        val numFrames = packed.size
+        val out = FloatArray(expectedLength + windowSize)
+        val weight = FloatArray(expectedLength + windowSize)
+        val buffer = FloatArray(windowSize * 2)
+        for (frame in 0 until numFrames) {
+            val row = packed[frame]
+            for (k in 0 until numBins) {
+                buffer[2 * k] = row[2 * k]
+                buffer[2 * k + 1] = -row[2 * k + 1]
+            }
+            for (k in numBins until windowSize) {
+                val mirrored = windowSize - k
+                buffer[2 * k] = row[2 * mirrored]
+                buffer[2 * k + 1] = row[2 * mirrored + 1]
+            }
+            inverseFftInPlace(buffer)
+            val start = frame * hopSize
+            for (i in 0 until windowSize) {
+                val sample = buffer[2 * i] * window[i]
+                val idx = start + i
+                if (idx < out.size) {
+                    out[idx] += sample
+                    weight[idx] += window[i] * window[i]
+                }
+            }
+        }
+        for (i in out.indices) {
+            if (weight[i] > 1e-9f) out[i] /= weight[i]
+        }
+        return out.copyOfRange(0, expectedLength.coerceAtMost(out.size))
+    }
+
+    private fun inverseFftInPlace(buffer: FloatArray) {
+        // Same radix-2 FFT, then conjugate the imaginary parts so the
+        // forward FFT becomes its inverse (scaled by N).
+        fftInPlace(buffer)
+        val n = windowSize
+        for (i in 0 until n) {
+            buffer[2 * i] /= n
+            buffer[2 * i + 1] = -buffer[2 * i + 1] / n
+        }
+    }
 
     private fun fftInPlace(buffer: FloatArray) {
         // Standard iterative radix-2 FFT. Replaces [re, im, re, im, ...]
@@ -122,5 +225,20 @@ class Stft(
             out[i] = (0.5 - 0.5 * cos(2.0 * Math.PI * i / (size - 1))).toFloat()
         }
         return out
+    }
+
+    companion object {
+        /**
+         * Periodic (DFT-even) Hann window. Slightly different from the
+         * symmetric Hann produced by the symmetric formula; periodic
+         * Hann is the right choice for STFT overlap-add.
+         */
+        fun periodicHann(size: Int): FloatArray {
+            val out = FloatArray(size)
+            for (i in 0 until size) {
+                out[i] = (0.5 - 0.5 * cos(2.0 * Math.PI * i / size)).toFloat()
+            }
+            return out
+        }
     }
 }

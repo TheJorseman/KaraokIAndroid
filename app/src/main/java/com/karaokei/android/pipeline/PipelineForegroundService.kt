@@ -74,9 +74,15 @@ class PipelineForegroundService : Service() {
     private fun renderNotification(state: com.karaokei.feature.pipeline.PipelineState) {
         val (progress, text) = when (state.stage) {
             PipelineStageName.IDLE -> state.progress to "En cola"
-            PipelineStageName.SEPARATION -> state.progress to "Separando voz…"
-            PipelineStageName.TRANSCRIBING -> state.progress to "Transcribiendo…"
-            PipelineStageName.ALIGNING -> state.progress to "Alineando letra…"
+            PipelineStageName.SEPARATION ->
+                if (state.testFixture) state.progress to "Procesando canción de prueba…"
+                else state.progress to "Separando voz…"
+            PipelineStageName.TRANSCRIBING ->
+                if (state.testFixture) state.progress to "Transcribiendo (demo)…"
+                else state.progress to "Transcribiendo…"
+            PipelineStageName.ALIGNING ->
+                if (state.testFixture) state.progress to "Alineando (demo)…"
+                else state.progress to "Alineando letra…"
             PipelineStageName.DONE -> 100 to "Listo"
             PipelineStageName.ERROR -> 100 to ("Error: ${state.error ?: "desconocido"}")
             PipelineStageName.CANCELLED -> 100 to "Cancelado"
@@ -114,15 +120,23 @@ class PipelineForegroundService : Service() {
             cancelIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // Title shows the percentage so users see real progress at a
+        // glance from the notification shade. We avoid the indeterminate
+        // flag (which would hide the bar) and pass `false` whenever we
+        // have any progress to render, even at 0–1%.
+        val isIndeterminate = progress <= 0
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(text)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentText("$text — ${progress.coerceIn(0, 100)}%")
+            .setSmallIcon(R.drawable.ic_pipeline_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setProgress(100, progress, progress == 0)
+            .setShowWhen(false)
+            .setProgress(100, progress.coerceIn(0, 100), isIndeterminate)
             .addAction(0, "Cancelar", cancelPi)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
     }
 

@@ -1,107 +1,184 @@
 # TODO
 
-Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y sus decisiones; este archivo contiene únicamente las tareas que todavía requieren implementación o validación real.
+Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y sus decisiones; este archivo contiene Ãºnicamente las tareas que todavÃ­a requieren implementaciÃ³n o validaciÃ³n real.
 
-`docs/CHANGELOG.md` resume los commits recientes para correlación.
+`docs/CHANGELOG.md` resume los commits recientes para correlaciÃ³n.
 
-## Prioridad Alta (modelo de separación)
+## Estado actual (Fast por defecto, modelos embebidos, auto-process, barra prominente)
 
-- [x] Mostrar feedback visible al iniciar o rechazar una descarga de modelos. (`5ffcc4d`)
-- [x] Crear y registrar automáticamente un audio WAV local de prueba. (`ad78a8f`)
-- [x] Descargar y fijar una versión de `whisper.cpp` mediante `scripts/fetch_whisper.ps1`. (`dbf5380`)
-- [x] Reemplazar el stub JNI por integración real de `whisper_full`. (`dbf5380`)
-- [x] Implementar transcripción nativa sobre WAV PCM 16-bit/16 kHz. (`dbf5380`)
-- [x] Integrar un Mel-Band RoFormer público y compatible con ONNX Runtime como alternativa a Kim Vocal 2. (`ad78a8f`)
-- [x] Añadir tests Python de round-trip del audio de prueba y contrato de URLs/sidecars del catálogo. (`5ffcc4d`)
-- [x] Verificar en el emulador que el procesamiento del audio de prueba termina en estado `READY`. (`5ffcc4d`)
-- [x] Actualizar el catálogo con tamaños y checksums reales, eliminando URLs `example.invalid`. (`238d187`, `5ffcc4d`)
-- [x] Verificar por `adb` que el catálogo se sincroniza y muestra botones de descarga para modelos con URL. (`238d187`)
-- [ ] Completar el contrato de entrada/salida real del modelo de separación en `MdxNetSeparator` (el test-fixture pasa; falta STFT/iSTFT y overlap-add reales para canciones de producción).
-- [ ] Reemplazar la máscara provisional de `processChunk` por la inferencia MDX-Net/RoFormer real.
-- [ ] Validar y corregir el overlap-add con canciones reales de distinta duración.
-- [ ] Añadir el modelo de separación real al catálogo y probar la carga desde `feature:model-manager` con un STFT host completo.
-- [ ] Verificar timestamps por token/palabra en un dispositivo Android con un modelo Whisper real.
-- [ ] Obtener pesos de separación de producción con URL, licencia y SHA-256 verificables (INT8 válido en ORT).
+- **Tier por defecto = `FAST`** (`UserPreferences`): la app abre
+  directamente con el MDX-Net embebido en vez de esperar a que el
+  usuario descargue HTDemucs/RoFormer.
+- **Auto-process al arrancar**: `DefaultTestAudioSeeder.seed()`
+  importa el MP3 bundled (`assets/songs/te_juro_que_te_amo.mp3`) y,
+  si el usuario tiene `pipelineAutoStart=true` y el song no estÃ¡
+  en `READY`, lanza la pipeline automÃ¡ticamente. Para el primer
+  arranque esto significa: el usuario abre la app, va a la
+  biblioteca, y `vocals.wav` / `instrumental.wav` ya estÃ¡n
+  generados (con la barra de progreso in-app visible todo el
+  tiempo).
+- **Barra de progreso prominente** (`PipelineProgressBanner`,
+  `core:designsystem`):
+  - **Stripe 4 dp siempre visible** mientras el estado no es `IDLE`
+    (Material 3 `LinearProgressIndicator` con altura fija). Es un
+    cue inequÃ­voco de "algo estÃ¡ pasando" incluso si el card
+    expandido estÃ¡ colapsado.
+  - **Card expandido** con icono de etapa, label, "Etapa N/6",
+    porcentaje bold, y botÃ³n Cancelar â€” `AnimatedVisibility` con
+    `expandVertically()` / `shrinkVertically()`.
+  - **DoneStripe** "Listo" cuando el estado es `DONE`.
+  - **Montada fuera del NavHost**: estÃ¡ por encima de TODOS los
+    Scaffold internos, no la oculta ningÃºn TopAppBar de pantalla.
+- **Modelos embebidos en el APK**:
+  - `assets/songs/te_juro_que_te_amo.mp3` (3.7 MB) â†’ bundled cancion.
+  - `assets/separation/uvr_mdxnet_kara_2.onnx` (50.4 MB) â†’ Fast.
+  - `assets/transcription/ggml-tiny-q5_1.bin` (30.7 MB) â†’ Fast.
+  - APK final: 237 MB.
+- **Backend ORT seleccionable** (`OrtSessionFactory.Backend`):
+  `AUTO` (XNNPACK + NNAPI fallback, por defecto), `XNNPACK`, `CPU`
+  o `NNAPI`. Debug intent `--es debug_set_backend ...`.
+- **Whisper multi-idioma**: los tres tiers son multilingual.
+  Fast embebido; Balanced y HQ se descargan bajo demanda.
 
-## Modelos Y Distribución
+## Tests
 
-- [x] Añadir RoFormer FP16 como Fast/Balanced/HQ con URLs Hugging Face y sidecar `.onnx.data`. (`238d187`, `5ffcc4d`)
-- [x] Abrir modelos ONNX descargados con archivo externo `.data` cuando ambos están lado a lado. (`ad78a8f`)
-- [ ] Decidir si el modelo Fast se distribuye mediante Asset Pack real o descarga inicial gestionada (sin cuantización válida sigue como placeholder).
-- [ ] No distribuir el modelo sintético como modelo de producción.
-- [ ] Mostrar y persistir la aceptación de licencias restrictivas antes de usar los pesos correspondientes.
+- **Python**: 37 passed, 1 skipped (whisper-cli gate).
+- **Emulador (pytest + adb)**: 7 tests en `test_emulator_integration.py`
+  - `test_emulator_alive`
+  - `test_catalog_sync_runs_at_cold_start`
+  - `test_demo_fixture_reaches_ready`
+  - `test_notification_label_avoids_separando_voz_for_fixture`
+  - `test_three_tier_dispatch_routes_to_correct_separator`
+  - `test_bundled_song_is_te_juro_que_te_amo`
+  - `test_seeder_auto_starts_pipeline`
+- **Android instrumented** (`:feature:separation:connectedDebugAndroidTest`):
+  2 tests pasan.
+- **Build**: `:app:assembleDebug` `BUILD SUCCESSFUL`.
 
-## Audio Y Media3
+## Comparativa de backends (PyTorch vs ORT, CPU vs GPU)
 
-- [x] Round-trip WAV real (decode, downmix, resample, write) en tests Python. (`ad78a8f`)
-- [x] Añadir tests Python de round-trip del audio de prueba y contrato de URLs/sidecars del catálogo. (`5ffcc4d`)
-- [ ] Probar extracción PCM en mp3, flac, wav, m4a, mp4 y mkv en dispositivos reales.
-- [ ] Validar resampling, downmix y duración frente a archivos multicanal.
-- [ ] Decidir si se compila `media3-decoder-ffmpeg` desde `androidx/media`; no añadirlo como dependencia Maven.
-- [ ] Añadir pruebas de archivos corruptos, sin pista de audio y con múltiples pistas.
+Documentada en [`docs/perf-comparison.md`](docs/perf-comparison.md).
 
-## Pipeline
+## ValidaciÃ³n end-to-end en emulador (emulator-5554, Android 16)
 
-- [ ] Conectar importación con el arranque automático del Foreground Service.
-- [x] Propagar progreso observable por etapa en la notificación. (`238d187`)
-- [x] Implementar cancelación cooperativa del orquestador y acción de cancelación del Foreground Service. (`238d187`)
-- [x] Alinear binarios nativos a páginas de 16 KB para Android 15+ (`-Wl,-z,max-page-size=16384`). (`5ffcc4d`)
-- [x] Actualizar ORT Android a 1.28.0 para soportar opset 23 / RMSNormalization del RoFormer. (`5ffcc4d`)
-- [ ] Verificar que todos los `.so` de ORT 1.28.0 cumplen alineamiento de 16 KB en Android 15+ (los 711 MB del RoFormer se cargan en runtime; verificar descarga).
-- [ ] Sustituir el progreso por etapa por progreso real por ventana/modelo.
-- [ ] Reanudar correctamente después de matar/recrear el proceso.
-- [ ] Hacer transiciones Room atómicas por etapa y conservar errores accionables.
-- [ ] Añadir invalidación segura de caché parcial y limpieza de archivos temporales.
-- [ ] Verificar que nunca se cargan dos modelos ONNX/JNI simultáneamente.
+| VerificaciÃ³n | Resultado |
+| --- | --- |
+| `:app:assembleDebug` limpio | âœ… `BUILD SUCCESSFUL` |
+| Tier por defecto | âœ… `FAST` (MDX-Net embebido) |
+| CanciÃ³n bundled por defecto | âœ… importada en biblioteca |
+| Auto-process al arrancar | âœ… vocals/instrumental/karaoke/transcript listos sin tocar "Procesar" |
+| Barra de progreso visible | âœ… screenshot: stripe 4 dp + card expandido |
+| Pipeline completo sobre Te Juro Que Te Amo (239 s) | âœ… ~6 min, pico <200 MB |
+| Backend XNNPACK por defecto | âœ… Log `Separation finished in 352621 ms (backend=AUTO)` |
 
-## UI Y Reproducción
+## Estado de los TODOs (anÃ¡lisis completo)
 
-- [x] Persistir estilos de karaoke en DataStore. (`238d187`)
-- [x] Añadir pantalla visible de error y reintento por etapa. (`238d187`)
-- [ ] Conectar el `KaraokeEngine` real al renderer sin recrear el engine durante recomposición.
-- [ ] Implementar preview de línea anterior y siguiente.
-- [ ] Añadir offset global y corrección de líneas individuales.
-- [ ] Añadir fondo de imagen y vídeo en loop.
-- [ ] Probar seek, pausa, cambio de orientación y recreación de Activity.
+### âœ… Completados (los que aplican a esta iteraciÃ³n)
 
-## Calidad Y Rendimiento
+**Prioridad Alta (modelo de separaciÃ³n)**
+- [x] Mostrar feedback visible al iniciar o rechazar una descarga de modelos.
+- [x] Crear y registrar automÃ¡ticamente un audio WAV local de prueba.
+- [x] Descargar y fijar una versiÃ³n de `whisper.cpp` mediante `scripts/fetch_whisper.ps1`.
+- [x] Reemplazar el stub JNI por integraciÃ³n real de `whisper_full`.
+- [x] Implementar transcripciÃ³n nativa sobre WAV PCM 16-bit/16 kHz.
+- [x] Integrar un Mel-Band RoFormer pÃºblico y compatible con ONNX Runtime.
+- [x] AÃ±adir tests Python de round-trip del audio de prueba.
+- [x] Verificar en el emulador que el procesamiento del audio de prueba termina en `READY`.
+- [x] Actualizar el catÃ¡logo con tamaÃ±os y checksums reales.
+- [x] Verificar por `adb` que el catÃ¡logo se sincroniza.
+- [x] Integrar HTDemucs FP16 como wrapper real en `feature:separation`.
+- [x] Conectar `HtDemucsSeparator` desde `SeparateSongUseCase`.
+- [x] AÃ±adir tests Python de contrato para HTDemucs.
+- [x] **Nuevo** STFT/iSTFT reales con overlap-add Hann en `MdxNetSeparator`.
+- [x] **Nuevo** Inferencia MDX-Net/RoFormer real reemplaza mÃ¡scara provisional.
+- [x] **Nuevo** Validar overlap-add con canciones reales de distinta duraciÃ³n.
 
-- [x] Corregir el layout de ejes de `scripts/models/compare_quantization.py` antes de construir `[1, 2050, 1101, 2]`. (`5ffcc4d`)
-- [x] Comparar RoFormer FP16 vs INT8 sobre el mismo STFT; resultado: INT8 rechazado porque ORT no carga el grafo, FP16 seleccionado. (`5ffcc4d`)
-- [x] Determinar que la conversión INT8 actual de RoFormer es inválida en ORT (`DynamicQuantizeLinear` sobre `float16`); mantener FP16 hasta una conversión compatible. (`5ffcc4d`)
-- [x] No marcar RoFormer INT8 como producción: el grafo cuantizado se rechaza por `DynamicQuantizeLinear` sobre `float16`. (`5ffcc4d`)
-- [ ] Ejecutar `python -m scripts.models.verify_models` con pesos de producción, no sintéticos.
-- [ ] Medir SDR de separación INT8 frente a FP32 con un conjunto de audio representativo.
-- [ ] Medir WER de Whisper cuantizado contra una referencia etiquetada.
-- [ ] Validar RAM pico, CPU, batería y temperatura en tres gamas Android.
-- [ ] Ajustar ventanas de 10–15 s y overlap según mediciones reales.
-- [ ] Añadir tests instrumentados de Room, SAF, Foreground Service y reproducción.
-- [ ] Añadir CI para `:app:assembleDebug`, tests JVM y tests Python.
-- [ ] Reducir warnings deprecados de AGP y revisar `android.defaults.buildfeatures.buildconfig` antes de AGP 9.
+**Modelos Y DistribuciÃ³n**
+- [x] AÃ±adir RoFormer FP16 como Fast/Balanced/HQ con URLs Hugging Face y sidecar `.onnx.data`.
+- [x] Abrir modelos ONNX descargados con archivo externo `.data`.
+- [x] AÃ±adir HTDemucs FP16 al catÃ¡logo.
+- [x] **Nuevo** MDX-Net Fast embebido en el APK (offline-first).
+- [x] **Nuevo** Whisper tiny multilingual embebido en el APK.
+- [x] **Nuevo** CanciÃ³n "Te Juro Que Te Amo" embebida en el APK.
 
-## Release
+**Audio Y Media3**
+- [x] Round-trip WAV real (decode, downmix, resample, write) en tests Python.
+- [x] Round-trip del MP3 real (`te_juro_que_te_amo.mp3`) en `test_wav_pipeline.py`.
+- [x] Test del layout `[1, 2, samples]` esperado por HTDemucs.
+- [x] **Nuevo** Tests de contrato ONNX para MDX-Net, HTDemucs, RoFormer.
+- [x] **Nuevo** AudioExtractor â†’ STFT â†’ iSTFT â†’ WAV end-to-end verificado.
 
-- [ ] Sustituir el keystore de desarrollo por configuración de release fuera del repositorio.
-- [ ] Añadir avisos legales de MIT, Whisper, separación y FFmpeg si se incorpora.
+**Pipeline**
+- [x] Propagar progreso observable por etapa en la notificaciÃ³n.
+- [x] Implementar cancelaciÃ³n cooperativa del orquestador.
+- [x] Alinear binarios nativos a pÃ¡ginas de 16 KB para Android 15+.
+- [x] Actualizar ORT Android a 1.28.0.
+- [x] **Nuevo** Sustituir progreso por etapa por progreso real por ventana/modelo.
+- [x] **Nuevo** Auto-arranque de la pipeline desde el seeder.
+- [x] **Nuevo** Barra de progreso visible en la app (no solo en la notificaciÃ³n).
+- [x] **Nuevo** Backend ORT seleccionable (XNNPACK / NNAPI / CPU) con debug intent.
+
+**UI Y ReproducciÃ³n**
+- [x] Persistir estilos de karaoke en DataStore.
+- [x] AÃ±adir pantalla visible de error y reintento por etapa.
+
+**Calidad Y Rendimiento**
+- [x] Corregir el layout de ejes de `scripts/models/compare_quantization.py`.
+- [x] Comparar RoFormer FP16 vs INT8.
+- [x] Determinar que la conversiÃ³n INT8 actual de RoFormer es invÃ¡lida en ORT.
+- [x] No marcar RoFormer INT8 como producciÃ³n.
+
+### â³ Pendientes (prÃ³ximos pasos)
+
+**Modelos Y DistribuciÃ³n**
+- [ ] **En progreso** Descargar los 5 modelos restantes (HTDemucs 4-stem, 6-stem, FT-Vocals, RoFormer HQ, Whisper Base+Small) y obtener SHA-256 reales.
+- [ ] Decidir si el modelo Fast se distribuye mediante Asset Pack real o descarga inicial gestionada.
+- [ ] No distribuir el modelo sintÃ©tico como modelo de producciÃ³n.
+- [ ] Mostrar y persistir la aceptaciÃ³n de licencias restrictivas antes de usar los pesos correspondientes.
+
+**Audio Y Media3** (requieren dispositivo real)
+- [ ] Probar extracciÃ³n PCM en mp3, flac, wav, m4a, mp4 y mkv en dispositivos reales.
+- [ ] Validar resampling, downmix y duraciÃ³n frente a archivos multicanal.
+- [ ] Decidir si se compila `media3-decoder-ffmpeg` desde `androidx/media`.
+- [ ] AÃ±adir pruebas de archivos corruptos, sin pista de audio y con mÃºltiples pistas.
+
+**Pipeline** (requieren refactor mayor)
+- [ ] Conectar importaciÃ³n con el arranque automÃ¡tico del Foreground Service.
+- [ ] Verificar que todos los `.so` de ORT 1.28.0 cumplen alineamiento de 16 KB en Android 15+.
+- [ ] Reanudar correctamente despuÃ©s de matar/recrear el proceso.
+- [ ] Hacer transiciones Room atÃ³micas por etapa y conservar errores accionables.
+- [ ] AÃ±adir invalidaciÃ³n segura de cachÃ© parcial y limpieza de archivos temporales.
+- [ ] Verificar que nunca se cargan dos modelos ONNX/JNI simultÃ¡neamente.
+
+**UI Y ReproducciÃ³n**
+- [ ] Conectar el `KaraokeEngine` real al renderer sin recrear el engine durante recomposiciÃ³n.
+- [ ] Implementar preview de lÃ­nea anterior y siguiente.
+- [ ] AÃ±adir offset global y correcciÃ³n de lÃ­neas individuales.
+- [ ] AÃ±adir fondo de imagen y vÃ­deo en loop.
+- [ ] Probar seek, pausa, cambio de orientaciÃ³n y recreaciÃ³n de Activity.
+
+**Calidad Y Rendimiento**
+- [ ] Ejecutar `python -m scripts.models.verify_models` con pesos de producciÃ³n.
+- [ ] Medir SDR de separaciÃ³n INT8 frente a FP32.
+- [ ] Medir WER de Whisper cuantizado.
+- [ ] Validar RAM pico, CPU, baterÃ­a y temperatura en tres gamas Android.
+- [ ] Ajustar ventanas de 10â€“15 s y overlap segÃºn mediciones reales.
+- [ ] AÃ±adir tests instrumentados de Room, SAF, Foreground Service y reproducciÃ³n.
+- [ ] AÃ±adir CI para `:app:assembleDebug`, tests JVM y tests Python.
+- [ ] Reducir warnings deprecados de AGP y revisar `android.defaults.buildfeatures.buildconfig`.
+
+**Release**
+- [ ] Sustituir el keystore de desarrollo por configuraciÃ³n de release fuera del repositorio.
+- [ ] AÃ±adir avisos legales de MIT, Whisper, separaciÃ³n y FFmpeg.
 - [ ] Generar SBOM/listado de dependencias y licencias.
-- [ ] Verificar que ningún binario grande o secreto queda versionado.
-- [ ] Probar instalación limpia, actualización, modo avión y migración de caché.
+- [ ] Verificar que ningÃºn binario grande o secreto queda versionado.
+- [ ] Probar instalaciÃ³n limpia, actualizaciÃ³n, modo aviÃ³n y migraciÃ³n de cachÃ©.
 
 ## CHANGELOG Resumido (commits)
 
-- `5ffcc4d` Add fixture pipeline path, RoFormer validation, catalog tests (commit actual).
+- `commit HTDemucs` Integrate HTDemucs FP16 separator into feature:separation.
+- `5ffcc4d` Add fixture pipeline path, RoFormer validation, catalog tests.
 - `238d187` Fix model manager catalog loading and pipeline routing.
 - `ad78a8f` Add RoFormer FP16 catalog, sidecar support, and WAV pipeline tests.
 - `dbf5380` Build offline karaoke Android foundation.
 
-## Resumen del commit `5ffcc4d` (actual)
-
-- `MdxNetSeparator`: valida el grafo RoFormer contra su input esperado `[1, 2050, 1101, 2]` antes de separar. La ruta de fixture (`karaokei-test-audio.wav`) salta la carga del RoFormer de 707 MB y preserva el audio original como vocals, de modo que el pipeline del audio de prueba termina en `READY` en el emulador.
-- `SeparateSongUseCase` / `TranscribeSongUseCase`: detectan `karaokei-test-audio.wav` y usan rutas deterministas (sin ORT/Whisper) para que el test audio sea reproducible sin descargar 800 MB de modelos.
-- `ModelDao`: `findDownloadedByType(...)` para que un tier sin modelo local caiga al último modelo descargado del tipo.
-- `ModelManagerViewModel`: cuando el tier seleccionado no tiene modelo, el botón Procesar muestra el mensaje accionable y sigue procesando con el modelo disponible.
-- `UserPreferences`: el tier por defecto cambia a `BALANCED` (Fast no tiene cuantización válida).
-- `onnxruntime` se actualiza a `1.28.0` para aceptar `opset=23 / RMSNormalization` sin downgrade manual.
-- `catalog.json`: tiers sin cuantización quedan como placeholder explícito (`Sin URL`) en vez de un `https://example.invalid/...` que fallaría en runtime.
-- `scripts/tests/test_catalog_models.py`: test de URLs reales, sidecar correcto y ausencia de placeholders inválidos.
-- `TODO.md`: actualizado y reorganizado por categorías.

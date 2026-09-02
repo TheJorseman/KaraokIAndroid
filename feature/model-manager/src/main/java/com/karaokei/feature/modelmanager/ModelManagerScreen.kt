@@ -150,6 +150,15 @@ private fun ModelRow(
             status.reasonCannotDownload?.let {
                 Text(it, style = MaterialTheme.typography.labelSmall)
             }
+            status.entity.notes?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall)
+            }
+            status.entity.tierClass?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = "clase: $it",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
         }
         if (status.canDownload) {
             Button(onClick = { onDownload(status.entity.id) }) {

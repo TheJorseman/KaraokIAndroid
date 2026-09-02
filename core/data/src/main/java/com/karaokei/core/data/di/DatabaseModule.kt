@@ -32,11 +32,18 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE models ADD COLUMN tier_class TEXT")
+            db.execSQL("ALTER TABLE models ADD COLUMN notes TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): KaraokeDatabase =
         Room.databaseBuilder(context, KaraokeDatabase::class.java, KaraokeDatabase.NAME)
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     @Provides fun provideSongDao(db: KaraokeDatabase): SongDao = db.songDao()

@@ -138,11 +138,14 @@ class ModelLoader @Inject constructor(
      * Sidecar name for a model, when its graph references an external
      * data file. Currently only the RoFormer graph carries one; for
      * everything else this returns `null` and the caller skips the
-     * sidecar copy.
+     * sidecar copy. We require the catalog to explicitly declare a
+     * `sidecar_path` — assuming `<assetPath>.data` exists would break
+     * models that don't carry a sidecar (MDX-Net, the synthetic Kim
+     * UNet, …) and throw at `assets.open`.
      */
     private fun sidecarAssetName(model: ModelEntity): String? {
-        if (model.type != com.karaokei.core.data.db.entity.ModelType.SEPARATION) return null
-        return model.sidecarPath ?: "${assetName(model)}.data"
+        val explicit = model.sidecarPath?.takeIf { it.isNotBlank() } ?: return null
+        return explicit
     }
 
     /**
