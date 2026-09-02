@@ -4,14 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.karaokei.core.data.cache.SongCacheLayout
 import com.karaokei.core.data.db.entity.SongEntity
+import com.karaokei.core.data.preferences.UserPreferences
 import com.karaokei.core.data.repository.SongRepository
 import com.karaokei.core.media.player.KaraokePlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,6 +32,7 @@ data class PlayerUiState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val error: String? = null,
+    val lyricsOffsetMs: Int = 0,
 )
 
 @HiltViewModel
@@ -36,10 +40,19 @@ class KaraokePlayerViewModel @Inject constructor(
     private val songRepository: SongRepository,
     private val player: KaraokePlayer,
     private val cacheLayout: SongCacheLayout,
+    private val userPreferences: UserPreferences,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+
+    /** Live offset so the player UI updates without restarting. */
+    val lyricsOffsetMs: StateFlow<Int> =
+        userPreferences.lyricsOffsetMs.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = 0,
+        )
 
     private var engine: KaraokeEngine? = null
 
@@ -60,17 +73,16 @@ class KaraokePlayerViewModel @Inject constructor(
             val doc = withContext(Dispatchers.IO) {
                 json.decodeFromString(KaraokeDocument.serializer(), karaokeFile.readText())
             }
-            engine = KaraokeEngine(doc)
+            val offsetMs = lyricsOffsetMs.value
+            engine = KaraokeEngine(doc, initialOffsetMs = offsetMs)
             _state.update {
                 it.copy(
                     song = song,
                     karaoke = doc,
                     durationMs = song.durationMs,
+                    lyricsOffsetMs = offsetMs,
                 )
             }
-            // Use the instrumental track for playback so the user can
-            // sing along without the original vocals. If absent, fall
-            // back to the original input.
             val instrumental = cacheLayout.instrumentalFile(songId)
             val source = if (instrumental.exists()) {
                 "file://${instrumental.absolutePath}"
@@ -100,6 +112,23 @@ class KaraokePlayerViewModel @Inject constructor(
         _state.update { it.copy(positionMs = positionMs) }
     }
 
+    /**
+     * Bump the lyrics offset by [deltaMs] (positive = lyrics come
+     * later, i.e. the music "leads" the karaoke view). Persists
+     * immediately to DataStore and pushes the change to the engine
+     * so the renderer picks it up on the next `onTick`.
+     */
+    fun nudgeLyricsOffset(deltaMs: Int) {
+        val current = lyricsOffsetMs.value
+        val next = (current + deltaMs)
+            .coerceIn(-MAX_OFFSET_MS, MAX_OFFSET_MS)
+        viewModelScope.launch {
+            userPreferences.setLyricsOffsetMs(next)
+        }
+        engine?.setOffsetMs(next)
+        _state.update { it.copy(lyricsOffsetMs = next) }
+    }
+
     private fun startTicker() {
         viewModelScope.launch {
             while (true) {
@@ -116,3 +145,10 @@ class KaraokePlayerViewModel @Inject constructor(
         player.pause()
     }
 }
+
+/**
+ * ±5 s is more than enough for any real song. Mirrors the engine
+ * module's own constant so the player UI can enforce the same
+ * range without depending on the engine module directly.
+ */
+private const val MAX_OFFSET_MS: Int = 5_000

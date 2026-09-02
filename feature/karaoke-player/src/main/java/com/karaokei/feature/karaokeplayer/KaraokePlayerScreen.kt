@@ -7,13 +7,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,11 +40,12 @@ fun KaraokePlayerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     val engine = remember(state.karaoke) {
-        state.karaoke?.let { KaraokeEngine(it) }
+        state.karaoke?.let { KaraokeEngine(it, initialOffsetMs = state.lyricsOffsetMs) }
     }
     val engineStateFlow = remember(engine) { engine?.state }
-    val engineState by (engineStateFlow?.collectAsStateWithLifecycle() ?: remember { kotlinx.coroutines.flow.MutableStateFlow<KaraokeState>(KaraokeState.Idle) }
-        .collectAsStateWithLifecycle())
+    val engineState by (engineStateFlow?.collectAsStateWithLifecycle() ?: remember {
+        kotlinx.coroutines.flow.MutableStateFlow<KaraokeState>(KaraokeState.Idle)
+    }.collectAsStateWithLifecycle())
 
     LaunchedEffect(songId) {
         viewModel.load(songId)
@@ -49,6 +53,13 @@ fun KaraokePlayerScreen(
 
     LaunchedEffect(state.positionMs, engine) {
         engine?.onTick(state.positionMs)
+    }
+
+    // Push any preference-driven offset updates into the resolver so
+    // the engine stays in sync when the user changes the offset from
+    // a different screen (e.g. a settings page).
+    LaunchedEffect(engine, state.lyricsOffsetMs) {
+        engine?.setOffsetMs(state.lyricsOffsetMs)
     }
 
     KaraokeStageBackground {
@@ -69,8 +80,10 @@ fun KaraokePlayerScreen(
                     positionMs = state.positionMs,
                     durationMs = state.durationMs,
                     isPlaying = state.isPlaying,
+                    lyricsOffsetMs = state.lyricsOffsetMs,
                     onSeek = { viewModel.seekTo(it) },
                     onTogglePlayPause = { viewModel.togglePlayPause() },
+                    onNudgeOffset = { deltaMs -> viewModel.nudgeLyricsOffset(deltaMs) },
                 )
             }
         }
@@ -82,31 +95,81 @@ private fun PlayerControls(
     positionMs: Long,
     durationMs: Long,
     isPlaying: Boolean,
+    lyricsOffsetMs: Int,
     onSeek: (Long) -> Unit,
     onTogglePlayPause: () -> Unit,
+    onNudgeOffset: (Int) -> Unit,
 ) {
     val safeDuration = if (durationMs <= 0L) 1L else durationMs
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconButton(onClick = onTogglePlayPause) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pausa" else "Reproducir",
+                    tint = Color.White,
+                )
+            }
+            Slider(
+                value = positionMs.toFloat(),
+                onValueChange = { onSeek(it.toLong()) },
+                valueRange = 0f..safeDuration.toFloat(),
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "${positionMs / 1000}s / ${durationMs / 1000}s",
+                color = Color.White,
+            )
+        }
+        OffsetRow(lyricsOffsetMs = lyricsOffsetMs, onNudgeOffset = onNudgeOffset)
+    }
+}
+
+@Composable
+private fun OffsetRow(
+    lyricsOffsetMs: Int,
+    onNudgeOffset: (Int) -> Unit,
+) {
+    val seconds = lyricsOffsetMs / 1000.0
+    val sign = if (seconds > 0.05) "+" else if (seconds < -0.05) "−" else "±"
+    val magnitude = abs(seconds)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = onTogglePlayPause) {
+        Text(text = "Letras", color = Color.White.copy(alpha = 0.7f))
+        IconButton(
+            onClick = { onNudgeOffset(-100) },
+            modifier = Modifier.size(40.dp),
+        ) {
             Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (isPlaying) "Pausa" else "Reproducir",
+                imageVector = Icons.Default.FastRewind,
+                contentDescription = "Adelantar letras 100 ms",
                 tint = Color.White,
             )
         }
-        Slider(
-            value = positionMs.toFloat(),
-            onValueChange = { onSeek(it.toLong()) },
-            valueRange = 0f..safeDuration.toFloat(),
+        Text(
+            text = "$sign${"%.1f".format(magnitude)} s",
+            color = Color.White,
             modifier = Modifier.weight(1f),
         )
-        Text(
-            text = "${positionMs / 1000}s / ${durationMs / 1000}s",
-            color = Color.White,
-        )
+        IconButton(
+            onClick = { onNudgeOffset(+100) },
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.FastForward,
+                contentDescription = "Retrasar letras 100 ms",
+                tint = Color.White,
+            )
+        }
     }
 }
+
+private fun abs(x: Double): Double = if (x < 0) -x else x
+

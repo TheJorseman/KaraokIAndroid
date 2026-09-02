@@ -59,11 +59,11 @@ fun SongDetailScreen(
                 enabled = state.song?.status == SongStatus.READY,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Reproducir karaoke") }
+            // Always enabled: tapping re-processes the song. While a
+            // pipeline is already running, the orchestrator cancels it
+            // and starts a new one (see PipelineForegroundService).
             OutlinedButton(
                 onClick = onProcess,
-                enabled = state.song?.status != SongStatus.SEPARATING &&
-                    state.song?.status != SongStatus.TRANSCRIBING &&
-                    state.song?.status != SongStatus.ALIGNING,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Procesar / reprocesar") }
             OutlinedButton(

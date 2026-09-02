@@ -66,6 +66,10 @@ class UserPreferences @Inject constructor(
         )
     }
 
+    val lyricsOffsetMs: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.LYRICS_OFFSET_MS] ?: 0
+    }
+
     suspend fun setSelectedTier(tier: ModelTier) {
         dataStore.edit { it[PreferencesKeys.SELECTED_TIER] = tier.name }
     }
@@ -97,5 +101,9 @@ class UserPreferences @Inject constructor(
             it[PreferencesKeys.KARAOKE_UPCOMING_COLOR] = style.upcomingColor
             it[PreferencesKeys.KARAOKE_SHADOW_ENABLED] = style.shadowEnabled
         }
+    }
+
+    suspend fun setLyricsOffsetMs(offsetMs: Int) {
+        dataStore.edit { it[PreferencesKeys.LYRICS_OFFSET_MS] = offsetMs }
     }
 }

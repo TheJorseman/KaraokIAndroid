@@ -23,7 +23,7 @@
       "type": "SEPARATION",
       "url": "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s_fp16weights.onnx",
       "size_bytes": 136428532,
-      "checksum_sha256": "",
+      "checksum_sha256": "7ce55792e2231c93fbf92de95f5fd5b3a5e6c89f7db690dfd693e8f1dce56869",
       "license": "MIT",
       "embedded_in_asset_pack": false,
       "asset_path": "separation/htdemucs_6s_fp16weights.onnx",
@@ -37,14 +37,14 @@
       "type": "SEPARATION",
       "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
       "size_bytes": 5308300,
-      "checksum_sha256": "",
+      "checksum_sha256": "dde2bfe8f85d2c12efa24ce4d45cc13e8709b8a72e277a93f130d496d948e918",
       "license": "MIT",
       "embedded_in_asset_pack": false,
       "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
       "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
       "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
       "tier_class": "mel_band_roformer_fp16",
-      "notes": "Mel-Band RoFormer FP16 (silverdaw, MIT). Input: complex spectrogram [1, F, T, 2] (real+imag). Output: vocals spectrogram same shape. Sample rate 44.1 kHz. Grafo 5.3 MB + sidecar .onnx.data 706 MB = ~711 MB total."
+      "notes": "Mel-Band RoFormer FP16 (silverdaw, MIT). Input: complex spectrogram [1, 2050, 1101, 2] (real+imag). Output: vocal spectrogram same shape. Sample rate 44.1 kHz, n_fft=2048, hop=441, periodic Hann."
     },
     {
       "id": "whisper-tiny-q5-1-fast",

@@ -53,10 +53,18 @@ class PipelineForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (currentSongId == songId) return START_STICKY
+        // Always re-launch the orchestrator (even if the same song
+        // ID is already running). `PipelineOrchestrator.runAsync`
+        // cancels the active job before launching a new one, so the
+        // previous pipeline is interrupted cleanly. This makes the
+        // "Procesar" button a true re-process trigger instead of a
+        // silent no-op that the user complained about.
         currentSongId = songId
-        startInForeground(text = "Procesando…", progress = 0)
-        scope.launch {
+        // Re-subscribe to orchestrator state every time the service
+        // gets a fresh start command, so the notification stays in
+        // sync after the system kills and recreates the service.
+        stateJob?.cancel()
+        stateJob = scope.launch {
             orchestrator.state.collectLatest { state ->
                 renderNotification(state)
                 if (state.stage == PipelineStageName.DONE ||

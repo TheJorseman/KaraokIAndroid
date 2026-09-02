@@ -12,16 +12,29 @@ import kotlinx.coroutines.flow.asStateFlow
  * The [onTick] callback is invoked from the player loop (T6.5) on
  * every position update (typically every animation frame). Internally
  * it updates the state without any allocation in the hot path.
+ *
+ * [setOffsetMs] lets the user nudge the lyrics forward / backward
+ * from the player UI when the karaoke timing is off. The offset is
+ * clamped to ±5 s and is applied to every word boundary by the
+ * resolver.
  */
 class KaraokeEngine(
     private val document: KaraokeDocument,
+    initialOffsetMs: Int = 0,
 ) {
-    private val resolver = KaraokePositionResolver(document)
+    private val resolver = KaraokePositionResolver(document, offsetMs = initialOffsetMs)
     private val _state = MutableStateFlow(snapshotFor(0L))
     val state: StateFlow<KaraokeState> = _state.asStateFlow()
 
+    /** Current per-song timing offset. Negative values delay lyrics. */
+    val offsetMs: Int get() = resolver.offsetMs
+
     fun onTick(positionMs: Long) {
         _state.value = snapshotFor(positionMs)
+    }
+
+    fun setOffsetMs(value: Int) {
+        resolver.offsetMs = value
     }
 
     private fun snapshotFor(positionMs: Long): KaraokeState {
