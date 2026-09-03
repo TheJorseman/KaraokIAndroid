@@ -3,6 +3,7 @@ package com.karaokei.feature.separation
 import ai.onnxruntime.OnnxTensor
 import android.util.Log
 import com.karaokei.core.ai.model.ModelLoader
+import com.karaokei.core.ai.ort.OrtSessionFactory
 import com.karaokei.core.ai.ort.OrtSessionHandle
 import com.karaokei.core.common.audio.PcmFormat
 import com.karaokei.core.common.coroutines.Dispatcher
@@ -64,7 +65,10 @@ class MdxNetSeparator @Inject constructor(
         require(model.type == ModelType.SEPARATION) { "not a separation model" }
         val localPath = modelLoader.resolvePath(model).getOrThrow()
         Log.i(TAG, "Running MDX-Net ${model.id} (${monoPcm.size} samples, $N_FFT-pt STFT)")
-        OrtSessionHandle.openFile(localPath).getOrThrow().use { session ->
+        // Force the plain CPU provider: XNNPACK's fused kernels overflow
+        // the UVR Karaoke 2 graph and emit Infinity/NaN on x86_64, which
+        // turns vocals.wav / instrumental.wav into silence downstream.
+        OrtSessionHandle.openFile(localPath, OrtSessionFactory.Backend.CPU).getOrThrow().use { session ->
             runStreaming(monoPcm, session)
         }
     }.let { result ->
@@ -132,6 +136,23 @@ class MdxNetSeparator @Inject constructor(
                 instrumentalPcm[i] /= weight[i]
             }
         }
+        // The UVR Karaoke 2 graph outputs an unnormalised vocal
+        // estimate that is ~1000x louder than the input mix. WavWriter
+        // clamps at [-1, 1], so without normalisation the vocals turn
+        // into a clipped square wave that Whisper cannot transcribe.
+        // Scale the vocal estimate so its RMS is a fixed fraction of
+        // the input mix RMS, then recompute `instrumental = mix - vocals`
+        // to keep `vocals + instrumental = mix` exactly.
+        val mixRms = rms(monoPcm)
+        val vocalsRms = rms(vocalsPcm)
+        if (vocalsRms > 1e-6f && mixRms > 1e-6f) {
+            val targetRms = mixRms * VOCALS_TO_MIX_RATIO
+            val scale = targetRms / vocalsRms
+            for (i in 0 until totalSamples) {
+                vocalsPcm[i] *= scale
+                instrumentalPcm[i] = monoPcm[i] - vocalsPcm[i]
+            }
+        }
         Log.i(TAG, "MDX-Net streaming done: vocals=${vocalsPcm.size} instrumental=${instrumentalPcm.size}")
         return SeparationResult(
             vocals = vocalsPcm,
@@ -139,6 +160,13 @@ class MdxNetSeparator @Inject constructor(
             sampleRateHz = PcmFormat.SAMPLE_RATE_HZ,
             durationMs = totalSamples.toLong() * 1000L / PcmFormat.SAMPLE_RATE_HZ,
         )
+    }
+
+    private fun rms(samples: FloatArray): Float {
+        if (samples.isEmpty()) return 0f
+        var sum = 0.0
+        for (s in samples) sum += s.toDouble() * s
+        return kotlin.math.sqrt(sum / samples.size).toFloat()
     }
 
     private fun runChunk(session: OrtSessionHandle, mixSpec: Array<FloatArray>): Array<FloatArray> {
@@ -234,5 +262,8 @@ class MdxNetSeparator @Inject constructor(
         // 10 s window at 16 kHz. 1 s overlap.
         const val WINDOW_SAMPLES: Int = 160_000
         const val WINDOW_OVERLAP_SAMPLES: Int = 16_000
+
+        /** Target vocal RMS as a fraction of the input mix RMS. */
+        private const val VOCALS_TO_MIX_RATIO: Float = 0.7f
     }
 }

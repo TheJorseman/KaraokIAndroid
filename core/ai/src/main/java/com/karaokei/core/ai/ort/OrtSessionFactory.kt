@@ -41,11 +41,21 @@ object OrtSessionFactory {
 
     @Volatile var activeBackend: Backend = Backend.AUTO
 
-    fun createSessionOptions(environment: OrtEnvironment): AppResult<OrtSession.SessionOptions> {
+    fun createSessionOptions(environment: OrtEnvironment): AppResult<OrtSession.SessionOptions> =
+        createSessionOptions(environment, activeBackend)
+
+    /**
+     * Build a session with an explicit [backend] instead of the
+     * process-wide [activeBackend]. Used by [MdxNetSeparator] which
+     * forces `CPU` because XNNPACK produces `Infinity`/`NaN` for the
+     * UVR Karaoke 2 graph on x86_64 (the model's internal activation
+     * overflow isn't handled by the fused XNNPACK kernels).
+     */
+    fun createSessionOptions(environment: OrtEnvironment, backend: Backend): AppResult<OrtSession.SessionOptions> {
         return runCatchingResult {
             val options = OrtSession.SessionOptions()
             options.setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-            val backends: List<String> = when (activeBackend) {
+            val backends: List<String> = when (backend) {
                 Backend.AUTO -> listOf("XNNPACK") + nnapiIfAvailable()
                 Backend.XNNPACK -> listOf("XNNPACK")
                 Backend.CPU -> listOf("CPU")

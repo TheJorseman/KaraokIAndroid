@@ -72,10 +72,14 @@ class OrtSessionHandle private constructor(
             }
         }
 
-        fun openFile(modelPath: String): AppResult<OrtSessionHandle> = runCatchingResult {
+        fun openFile(modelPath: String): AppResult<OrtSessionHandle> = openFile(modelPath, OrtSessionFactory.activeBackend)
+
+        fun openFile(modelPath: String, backend: OrtSessionFactory.Backend): AppResult<OrtSessionHandle> = runCatchingResult {
             val environment = OrtEnvironment.getEnvironment()
-            val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
-            OrtSessionHandle(environment.createSession(modelPath, options), environment)
+            val options = OrtSessionFactory.createSessionOptions(environment, backend).getOrThrow()
+            val session = environment.createSession(modelPath, options)
+            android.util.Log.i("OrtSessionHandle", "session opened with backend=$backend (requested)")
+            OrtSessionHandle(session, environment)
         }.let { result ->
             when (result) {
                 is AppResult.Success -> result
