@@ -22,7 +22,7 @@ object KaraokeLineBuilder {
 
     private const val MIN_WORDS_PER_LINE: Int = 4
     private const val TARGET_WORDS_PER_LINE: Int = 8
-    private const val MAX_WORDS_PER_LINE: Int = 14
+    internal const val MAX_WORDS_PER_LINE: Int = 14
     private val SPLIT_MARKERS = setOf(',', '—', '–', ';')
 
     fun build(transcript: TranscriptDocument): KaraokeDocument {

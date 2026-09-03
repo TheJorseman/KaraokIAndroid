@@ -4,7 +4,7 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 
 `docs/CHANGELOG.md` resume los commits recientes para correlación.
 
-## Estado actual (Fast por defecto, modelos embebidos, auto-process, barra prominente)
+## Estado actual (Fast por defecto, modelos embebidos, auto-process, barra prominente, offset de letra)
 
 - **Tier por defecto = `FAST`** (`UserPreferences`): la app abre
   directamente con el MDX-Net embebido en vez de esperar a que el
@@ -12,20 +12,12 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - **Auto-process al arrancar**: `DefaultTestAudioSeeder.seed()`
   importa el MP3 bundled (`assets/songs/te_juro_que_te_amo.mp3`) y,
   si el usuario tiene `pipelineAutoStart=true` y el song no está
-  en `READY`, lanza la pipeline automáticamente. Para el primer
-  arranque esto significa: el usuario abre la app, va a la
-  biblioteca, y `vocals.wav` / `instrumental.wav` ya están
-  generados (con la barra de progreso in-app visible todo el
-  tiempo).
+  en `READY`, lanza la pipeline automáticamente.
 - **Barra de progreso prominente** (`PipelineProgressBanner`,
   `core:designsystem`):
-  - **Stripe 4 dp siempre visible** mientras el estado no es `IDLE`
-    (Material 3 `LinearProgressIndicator` con altura fija). Es un
-    cue inequívoco de "algo está pasando" incluso si el card
-    expandido está colapsado.
+  - **Stripe 4 dp siempre visible** mientras el estado no es `IDLE`.
   - **Card expandido** con icono de etapa, label, "Etapa N/6",
-    porcentaje bold, y botón Cancelar — `AnimatedVisibility` con
-    `expandVertically()` / `shrinkVertically()`.
+    porcentaje bold, y botón Cancelar.
   - **DoneStripe** "Listo" cuando el estado es `DONE`.
   - **Montada fuera del NavHost**: está por encima de TODOS los
     Scaffold internos, no la oculta ningún TopAppBar de pantalla.
@@ -37,6 +29,14 @@ Lista operativa de trabajo pendiente. `docs/plan.md` conserva el plan completo y
 - **Backend ORT seleccionable** (`OrtSessionFactory.Backend`):
   `AUTO` (XNNPACK + NNAPI fallback, por defecto), `XNNPACK`, `CPU`
   o `NNAPI`. Debug intent `--es debug_set_backend ...`.
+- **Offset de letra por canción**: `KaraokePositionResolver.offsetMs`
+  desplaza los timestamps de cada palabra ±5 s. El jugador expone
+  botones «adelantar / retrasar letras» (±100 ms por pulsación) que
+  persisten en `UserPreferences.lyricsOffsetMs`.
+- **Botón Procesar siempre re-lanza**: `PipelineForegroundService`
+  ya no devuelve early cuando el mismo song ya está corriendo;
+  `PipelineOrchestrator.runAsync` cancela el job activo y arranca
+  uno nuevo, así que "Procesar / reprocesar" es un trigger real.
 - **Whisper multi-idioma**: los tres tiers son multilingual.
   Fast embebido; Balanced y HQ se descargan bajo demanda.
 
@@ -131,8 +131,8 @@ Documentada en [`docs/perf-comparison.md`](docs/perf-comparison.md).
 ### ⏳ Pendientes (próximos pasos)
 
 **Modelos Y Distribución**
-- [ ] **En progreso** Descargar los 5 modelos restantes (HTDemucs 4-stem, 6-stem, FT-Vocals, RoFormer HQ, Whisper Base+Small) y obtener SHA-256 reales.
-- [ ] Decidir si el modelo Fast se distribuye mediante Asset Pack real o descarga inicial gestionada.
+- [x] Descargar los 5 modelos restantes (HTDemucs 4-stem/6-stem/FT-Vocals, RoFormer HQ, Whisper Base+Small) y fijar SHA-256 reales en el catálogo.
+- [ ] Decidir si el modelo Fast se distribuye mediante Asset Pack real o descarga inicial gestionada (hoy va embebido en el APK).
 - [ ] No distribuir el modelo sintético como modelo de producción.
 - [ ] Mostrar y persistir la aceptación de licencias restrictivas antes de usar los pesos correspondientes.
 
@@ -143,17 +143,17 @@ Documentada en [`docs/perf-comparison.md`](docs/perf-comparison.md).
 - [ ] Añadir pruebas de archivos corruptos, sin pista de audio y con múltiples pistas.
 
 **Pipeline** (requieren refactor mayor)
-- [ ] Conectar importación con el arranque automático del Foreground Service.
+- [x] Conectar importación con el arranque automático del Foreground Service (vía `DefaultTestAudioSeeder.maybeAutoStart`).
 - [ ] Verificar que todos los `.so` de ORT 1.28.0 cumplen alineamiento de 16 KB en Android 15+.
 - [ ] Reanudar correctamente después de matar/recrear el proceso.
 - [ ] Hacer transiciones Room atómicas por etapa y conservar errores accionables.
 - [ ] Añadir invalidación segura de caché parcial y limpieza de archivos temporales.
-- [ ] Verificar que nunca se cargan dos modelos ONNX/JNI simultáneamente.
+- [ ] Verificar que nunca se cargan dos modelos ONNX/JNI simultáneamente (el `Mutex` del orquestador ya lo garantiza a nivel de pipeline, pero falta un test explícito).
 
 **UI Y Reproducción**
 - [ ] Conectar el `KaraokeEngine` real al renderer sin recrear el engine durante recomposición.
 - [ ] Implementar preview de línea anterior y siguiente.
-- [ ] Añadir offset global y corrección de líneas individuales.
+- [x] Añadir offset global y corrección de líneas individuales (±5 s, persistido en DataStore, controles en el player).
 - [ ] Añadir fondo de imagen y vídeo en loop.
 - [ ] Probar seek, pausa, cambio de orientación y recreación de Activity.
 
