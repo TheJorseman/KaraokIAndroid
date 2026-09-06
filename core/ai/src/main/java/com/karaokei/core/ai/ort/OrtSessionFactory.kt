@@ -54,7 +54,17 @@ object OrtSessionFactory {
     fun createSessionOptions(environment: OrtEnvironment, backend: Backend): AppResult<OrtSession.SessionOptions> {
         return runCatchingResult {
             val options = OrtSession.SessionOptions()
-            options.setIntraOpNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
+            // RAM budget: each intra-op thread keeps its own scratch
+            // buffers for the graph, so halving the thread count from
+            // `availableProcessors().coerceAtMost(4)` to a fixed 2 cuts
+            // the peak activation footprint substantially on 4-6 GB
+            // devices (HTDemucs / RoFormer OOM otherwise). We run the
+            // pipeline sequentially anyway, so 1 inter-op thread is
+            // enough.
+            options.setIntraOpNumThreads(2)
+            options.setInterOpNumThreads(1)
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            options.setMemoryPatternOptimization(true)
             val backends: List<String> = when (backend) {
                 Backend.AUTO -> listOf("XNNPACK") + nnapiIfAvailable()
                 Backend.XNNPACK -> listOf("XNNPACK")
@@ -64,7 +74,7 @@ object OrtSessionFactory {
             backends.forEach { providerName ->
                 try {
                     when (providerName) {
-                        "XNNPACK" -> options.addXnnpack(mapOf("intra_op_num_threads" to "4"))
+                        "XNNPACK" -> options.addXnnpack(mapOf("intra_op_num_threads" to "2"))
                         "NNAPI" -> options.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16))
                         "CPU" -> Unit // CPU is the ORT default; no explicit registration
                         else -> Unit
