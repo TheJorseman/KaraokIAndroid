@@ -215,6 +215,22 @@ class DebugPipelineTrigger @Inject constructor(
         Log.i(TAG, "ORT backend set to $backend via debug trigger")
     }
 
+    /**
+     * Override the seeder's auto-start preference. Pass `false` to stop
+     * [com.karaokei.android.testaudio.DefaultTestAudioSeeder] from kicking
+     * off the default song's pipeline on cold start, which races with the
+     * `debug_seed_path` trigger during tests.
+     */
+    fun handleSetAutoStart(value: String?) {
+        if (value.isNullOrBlank()) return
+        val enabled = value.equals("true", ignoreCase = true) || value == "1"
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { userPreferences.setPipelineAutoStart(enabled) }
+                .onFailure { Log.e(TAG, "Failed to set pipeline auto-start to $enabled", it) }
+                .onSuccess { Log.i(TAG, "Pipeline auto-start set to $enabled via debug trigger") }
+        }
+    }
+
     companion object {
         private const val TAG = "DebugPipelineTrigger"
 
@@ -224,6 +240,7 @@ class DebugPipelineTrigger @Inject constructor(
         const val EXTRA_SEED_MODEL_PATH: String = "debug_seed_model_path"
         const val EXTRA_SET_TIER: String = "debug_set_tier"
         const val EXTRA_SET_BACKEND: String = "debug_set_backend"
+        const val EXTRA_SET_AUTO_START: String = "debug_set_auto_start"
     }
 }
 

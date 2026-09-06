@@ -179,6 +179,8 @@ class MdxNetSeparator @Inject constructor(
             val subEnd = (subStart + MDX_FRAMES_PER_CHUNK).coerceAtMost(numFrames)
             val actualFrames = subEnd - subStart
             val input = FloatArray(1 * 4 * EXPECTED_BINS * MDX_FRAMES_PER_CHUNK)
+            val channelStride = EXPECTED_BINS * MDX_FRAMES_PER_CHUNK
+            val binStride = MDX_FRAMES_PER_CHUNK
             for (f in 0 until actualFrames) {
                 val globalFrame = subStart + f
                 for (k in 0 until EXPECTED_BINS) {
@@ -186,11 +188,13 @@ class MdxNetSeparator @Inject constructor(
                     val im = -mixSpec[globalFrame][2 * k + 1] // numpy +imag convention
                     val mag = sqrt(re * re + im * im)
                     val phase = atan2(im, re)
-                    val outIdx = ((f * EXPECTED_BINS) + k) * 4
-                    input[outIdx] = re
-                    input[outIdx + 1] = im
-                    input[outIdx + 2] = mag
-                    input[outIdx + 3] = phase
+                    // Layout is [batch, channel, bin, frame]; each channel
+                    // occupies a contiguous `channelStride` block.
+                    val base = k * binStride + f
+                    input[base] = re
+                    input[channelStride + base] = im
+                    input[2 * channelStride + base] = mag
+                    input[3 * channelStride + base] = phase
                 }
             }
             val floatBuffer = ByteBuffer
