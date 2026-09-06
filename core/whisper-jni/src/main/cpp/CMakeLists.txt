@@ -14,9 +14,12 @@ set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-# Use ggml's native threadpool instead of OpenMP; libomp on Android
-# adds overhead and under-performs the native pool for whisper.
-set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+# The optimized FP32 SGEMM (llamafile, with NEON kernels) is disabled by
+# default; the whisper encoder is FP32 GEMM-bound and falls back to a
+# much slower scalar path without it. Keep OpenMP enabled: llamafile is
+# known to deadlock against the native threadpool on some ARM devices.
+set(GGML_OPENMP ON CACHE BOOL "" FORCE)
+set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
 
 # Android 15+ requires native libraries to be aligned to 16 KB pages.
 # The flag only makes sense at link time, not when the static
