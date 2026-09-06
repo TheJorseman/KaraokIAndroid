@@ -3,6 +3,7 @@ package com.karaokei.feature.separation
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import android.util.Log
+import com.karaokei.core.ai.ort.OrtSessionFactory
 import com.karaokei.core.common.coroutines.Dispatcher
 import com.karaokei.core.common.coroutines.KaraokeDispatcher
 import com.karaokei.core.common.result.AppError
@@ -58,7 +59,8 @@ class RoformerSeparator @Inject constructor(
         runCatchingResult {
             val localPath = modelLoader.resolvePath(model).getOrThrow()
             Log.i(TAG, "RoFormer separate: opening session ${localPath} (${java.io.File(localPath).length()} bytes)")
-            val session = environment.createSession(localPath)
+            val options = OrtSessionFactory.createSessionOptions(environment, OrtSessionFactory.Backend.CPU).getOrThrow()
+            val session = environment.createSession(localPath, options)
             try {
                 val stft = Stft(windowSize = N_FFT, hopSize = HOP)
                 val chunkSamples = HOP * (EXPECTED_FRAMES - 1)

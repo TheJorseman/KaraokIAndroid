@@ -231,6 +231,19 @@ class DebugPipelineTrigger @Inject constructor(
         }
     }
 
+    /**
+     * Override the preferred transcription language. Pass an ISO-639-1
+     * code (`es`, `en`, …) or `auto` to fall back to detection.
+     */
+    fun handleSetLanguage(language: String?) {
+        if (language.isNullOrBlank()) return
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            runCatching { userPreferences.setPreferredLanguage(language) }
+                .onFailure { Log.e(TAG, "Failed to set language to $language", it) }
+                .onSuccess { Log.i(TAG, "Language set to $language via debug trigger") }
+        }
+    }
+
     companion object {
         private const val TAG = "DebugPipelineTrigger"
 
@@ -241,6 +254,7 @@ class DebugPipelineTrigger @Inject constructor(
         const val EXTRA_SET_TIER: String = "debug_set_tier"
         const val EXTRA_SET_BACKEND: String = "debug_set_backend"
         const val EXTRA_SET_AUTO_START: String = "debug_set_auto_start"
+        const val EXTRA_SET_LANGUAGE: String = "debug_set_language"
     }
 }
 
