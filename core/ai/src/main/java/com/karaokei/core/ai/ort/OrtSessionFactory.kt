@@ -19,11 +19,12 @@ import java.util.EnumSet
  *  - `CPU`     — Vanilla CPU execution. The slowest but most
  *                portable; useful for diagnostic baselines.
  *
- * The active backend is set by [activeBackend] (default: AUTO →
- * XNNPACK with NNAPI as a fallback). The user can override it at
- * runtime via `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU"
- * | "XNNPACK" | "AUTO")` to compare precision / latency on a real
- * device.
+ * The active backend is set by [activeBackend] (default: CPU, the most
+ * portable and precise). XNNPACK overflows some graphs (MDX-Net) and
+ * inflates RSS, and NNAPI falls back to a slow `nnapi-reference`
+ * implementation on many devices. The user can override it at runtime
+ * via `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
+ * "XNNPACK" | "AUTO")`.
  *
  * QNN (Qualcomm NPU) is documented as a post-MVP item — see
  * `docs/post-mvp.md`. The Qualcomm AI Engine SDK is required and
@@ -39,7 +40,7 @@ object OrtSessionFactory {
         NNAPI,   // NNAPI only
     }
 
-    @Volatile var activeBackend: Backend = Backend.AUTO
+    @Volatile var activeBackend: Backend = Backend.CPU
 
     fun createSessionOptions(environment: OrtEnvironment): AppResult<OrtSession.SessionOptions> =
         createSessionOptions(environment, activeBackend)

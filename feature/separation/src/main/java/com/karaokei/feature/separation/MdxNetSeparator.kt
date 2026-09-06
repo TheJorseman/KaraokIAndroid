@@ -65,10 +65,10 @@ class MdxNetSeparator @Inject constructor(
         require(model.type == ModelType.SEPARATION) { "not a separation model" }
         val localPath = modelLoader.resolvePath(model).getOrThrow()
         Log.i(TAG, "Running MDX-Net ${model.id} (${monoPcm.size} samples, $N_FFT-pt STFT)")
-        // Force the plain CPU provider: XNNPACK's fused kernels overflow
-        // the UVR Karaoke 2 graph and emit Infinity/NaN on x86_64, which
-        // turns vocals.wav / instrumental.wav into silence downstream.
-        OrtSessionHandle.openFile(localPath, OrtSessionFactory.Backend.CPU).getOrThrow().use { session ->
+        // Use the process-wide backend (default AUTO; override via
+        // debug_set_backend). NNAPI offloads to the DSP/NPU where the
+        // graph is supported, falling back to CPU for the rest.
+        OrtSessionHandle.openFile(localPath, OrtSessionFactory.activeBackend).getOrThrow().use { session ->
             runStreaming(monoPcm, session)
         }
     }.let { result ->

@@ -48,7 +48,7 @@ class HtDemucsSeparator @Inject constructor(
         runCatchingResult {
             val localPath = modelLoader.resolvePath(model).getOrThrow()
             Log.i(TAG, "HtDemucs separate: opening session ${localPath} (${java.io.File(localPath).length()} bytes)")
-            val options = OrtSessionFactory.createSessionOptions(environment, OrtSessionFactory.Backend.CPU).getOrThrow()
+            val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
             val session = environment.createSession(localPath, options)
             try {
                 val numStems = stemCount(session)
