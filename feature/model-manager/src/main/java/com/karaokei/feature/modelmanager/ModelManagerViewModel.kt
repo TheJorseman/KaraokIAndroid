@@ -35,9 +35,24 @@ data class ModelEntryStatus(
 data class TierUiState(
     val selectedTier: ModelTier,
     val options: List<TierOption>,
+    val selectedLanguage: String,
+    val languageOptions: List<LanguageOption>,
     val nonCommercialAccepted: Boolean,
     val showLicensePrompt: Boolean,
     val error: String? = null,
+)
+
+data class LanguageOption(
+    val code: String,
+    val displayName: String,
+)
+
+private data class StateInput(
+    val models: List<ModelEntity>,
+    val tier: ModelTier,
+    val language: String,
+    val accepted: Boolean,
+    val prompt: Boolean,
 )
 
 @HiltViewModel
@@ -53,19 +68,26 @@ class ModelManagerViewModel @Inject constructor(
     private val _pendingLicenseModelId = MutableStateFlow<String?>(null)
 
     val state: StateFlow<TierUiState> = combine(
-        modelDao.observeAll(),
-        preferences.selectedTier,
-        preferences.nonCommercialLicenseAccepted,
-        _showLicensePrompt,
+        combine(
+            modelDao.observeAll(),
+            preferences.selectedTier,
+            preferences.preferredLanguage,
+            preferences.nonCommercialLicenseAccepted,
+            _showLicensePrompt,
+        ) { models, tier, language, accepted, prompt ->
+            StateInput(models, tier, language, accepted, prompt)
+        },
         _error,
-    ) { models, tier, accepted, prompt, error ->
-        buildState(models, tier, accepted, prompt, error)
+    ) { input, error ->
+        buildState(input.models, input.tier, input.language, input.accepted, input.prompt, error)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = TierUiState(
             selectedTier = ModelTier.FAST,
             options = emptyList(),
+            selectedLanguage = "auto",
+            languageOptions = LANGUAGE_OPTIONS,
             nonCommercialAccepted = false,
             showLicensePrompt = false,
         ),
@@ -92,6 +114,10 @@ class ModelManagerViewModel @Inject constructor(
 
     fun selectTier(tier: ModelTier) {
         viewModelScope.launch { preferences.setSelectedTier(tier) }
+    }
+
+    fun selectLanguage(language: String) {
+        viewModelScope.launch { preferences.setPreferredLanguage(language) }
     }
 
     fun download(modelId: String) {
@@ -141,9 +167,10 @@ class ModelManagerViewModel @Inject constructor(
         _effects.value = null
     }
 
-    private suspend fun buildState(
+    private fun buildState(
         models: List<ModelEntity>,
         tier: ModelTier,
+        language: String,
         accepted: Boolean,
         prompt: Boolean,
         error: String?,
@@ -171,6 +198,8 @@ class ModelManagerViewModel @Inject constructor(
         return TierUiState(
             selectedTier = tier,
             options = options,
+            selectedLanguage = language,
+            languageOptions = LANGUAGE_OPTIONS,
             nonCommercialAccepted = accepted,
             showLicensePrompt = prompt,
             error = error,
@@ -222,5 +251,17 @@ class ModelManagerViewModel @Inject constructor(
 
     sealed interface Effect {
         data class ShowMessage(val text: String) : Effect
+    }
+
+    companion object {
+        private val LANGUAGE_OPTIONS = listOf(
+            LanguageOption("auto", "Auto (detectar)"),
+            LanguageOption("es", "Español"),
+            LanguageOption("en", "English"),
+            LanguageOption("pt", "Português"),
+            LanguageOption("fr", "Français"),
+            LanguageOption("de", "Deutsch"),
+            LanguageOption("it", "Italiano"),
+        )
     }
 }

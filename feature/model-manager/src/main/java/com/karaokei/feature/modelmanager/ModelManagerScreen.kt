@@ -1,5 +1,6 @@
 package com.karaokei.feature.modelmanager
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +84,25 @@ fun ModelManagerScreen(
                     onDownload = { modelId -> viewModel.download(modelId) },
                 )
             }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Idioma de transcripción",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Fijar el idioma acelera la transcripción al saltar la detección automática.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            items(state.languageOptions) { option ->
+                LanguageRow(
+                    option = option,
+                    selected = option.code == state.selectedLanguage,
+                    onSelect = { viewModel.selectLanguage(option.code) },
+                )
+            }
         }
     }
 
@@ -128,6 +148,24 @@ private fun TierCard(
                 onDownload = onDownload,
             )
         }
+    }
+}
+
+@Composable
+private fun LanguageRow(
+    option: LanguageOption,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSelect)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onSelect)
+        Text(option.displayName, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
