@@ -41,36 +41,76 @@ class HtDemucsSeparator @Inject constructor(
     suspend fun separate(
         stereoPcm: FloatArray,
         model: ModelEntity,
+        onProgress: ((Float) -> Unit)? = null,
     ): AppResult<SeparationResult> = withContext(io) {
         Log.i(TAG, "HtDemucs separate: starting for ${model.id}")
         runCatchingResult {
             val localPath = modelLoader.resolvePath(model).getOrThrow()
             Log.i(TAG, "HtDemucs separate: opening session ${localPath} (${java.io.File(localPath).length()} bytes)")
             val session = environment.createSession(localPath)
-            val numStems = stemCount(session)
-            val expectedSamples = sampleLength(session)
-            Log.i(TAG, "HtDemucs separate: session opened, num_stems=$numStems samples=$expectedSamples")
-            require(stereoPcm.size == 2 * expectedSamples) {
-                "htdemucs input mismatch: got ${stereoPcm.size / 2} samples, " +
-                    "expected $expectedSamples"
+            try {
+                val numStems = stemCount(session)
+                val windowSize = sampleLength(session)
+                val totalSamples = stereoPcm.size / 2
+                require(stereoPcm.size == totalSamples * 2) {
+                    "htdemucs input must be interleaved stereo (L-then-R)"
+                }
+                val vocalsStem = vocalsStemIndex(model.id, numStems)
+                Log.i(
+                    TAG,
+                    "HtDemucs separate: num_stems=$numStems window=$windowSize " +
+                        "total=$totalSamples vocalsStem=$vocalsStem",
+                )
+
+                // Overlap-add chunking (mirrors the reference
+                // `infer.py::separate`): 25% overlap with a linear
+                // fade in/out, normalised by the summed window weights.
+                val overlap = windowSize / 4
+                val stride = windowSize - overlap
+                val nChunks = maxOf(1, (totalSamples + stride - 1) / stride)
+                val window = makeWindow(windowSize, overlap)
+                Log.i(TAG, "HtDemucs separate: $nChunks chunk(s), overlap=$overlap stride=$stride")
+
+                val vocalsOut = FloatArray(totalSamples * 2)
+                val weight = FloatArray(totalSamples)
+
+                for (chunkIndex in 0 until nChunks) {
+                    val start = chunkIndex * stride
+                    val end = minOf(start + windowSize, totalSamples)
+                    val chunkLen = end - start
+                    val chunk = extractStereoChunk(stereoPcm, totalSamples, start, chunkLen, windowSize)
+                    val mixTensor = makeMixTensor(chunk, windowSize)
+                    val outputs = session.run(mapOf("mix" to mixTensor))
+                    mixTensor.close()
+                    val stems = readStems(outputs[0] as? OnnxTensor, numStems, windowSize)
+                    val vocalsChunk = stems[vocalsStem]
+                    for (j in 0 until chunkLen) {
+                        val w = window[j]
+                        val outIdx = start + j
+                        vocalsOut[outIdx] += vocalsChunk[j] * w
+                        vocalsOut[totalSamples + outIdx] += vocalsChunk[windowSize + j] * w
+                        weight[outIdx] += w
+                    }
+                    onProgress?.invoke((chunkIndex + 1).toFloat() / nChunks)
+                }
+                for (i in 0 until totalSamples) {
+                    val w = maxOf(weight[i], 1e-8f)
+                    vocalsOut[i] /= w
+                    vocalsOut[totalSamples + i] /= w
+                }
+                // Instrumental is recomputed by the caller at 16 kHz mono
+                // (`SeparateSongUseCase.htDemucsSeparation`), so avoid the
+                // extra full-resolution stereo allocation here.
+                Log.i(TAG, "HtDemucs separate: done, vocals=$vocalsStem")
+                SeparationResult(
+                    vocals = vocalsOut,
+                    instrumental = FloatArray(0),
+                    sampleRateHz = 44100,
+                    durationMs = totalSamples.toLong() * 1000L / 44100,
+                )
+            } finally {
+                session.close()
             }
-            val mixTensor = makeMixTensor(stereoPcm, expectedSamples)
-            Log.i(TAG, "HtDemucs separate: tensor built, running inference")
-            val outputs = session.run(mapOf("mix" to mixTensor))
-            mixTensor.close()
-            Log.i(TAG, "HtDemucs separate: inference done, reading stems")
-            val stems = readStems(outputs[0] as? OnnxTensor, numStems, expectedSamples)
-            session.close()
-            val vocalsStem = vocalsStemIndex(model.id, numStems)
-            val vocals = flatten(stems, vocalsStem)
-            val instrumental = mixMinusVocals(stereoPcm, vocals)
-            Log.i(TAG, "HtDemucs separate: vocals=$vocalsStem, mix-minus-vocals produced")
-            SeparationResult(
-                vocals = vocals,
-                instrumental = instrumental,
-                sampleRateHz = 44100,
-                durationMs = expectedSamples * 1000L / 44100,
-            )
         }.let { result ->
             when (result) {
                 is AppResult.Success -> result
@@ -81,10 +121,37 @@ class HtDemucsSeparator @Inject constructor(
         }
     }
 
+    private fun makeWindow(n: Int, overlap: Int): FloatArray {
+        val w = FloatArray(n) { 1f }
+        for (i in 0 until overlap) {
+            val fade = (i + 1).toFloat() / overlap.toFloat()
+            w[i] = fade
+            w[n - 1 - i] = fade
+        }
+        return w
+    }
+
+    private fun extractStereoChunk(
+        stereo: FloatArray,
+        totalSamples: Int,
+        start: Int,
+        chunkLen: Int,
+        windowSize: Int,
+    ): FloatArray {
+        val out = FloatArray(windowSize * 2)
+        for (j in 0 until chunkLen) {
+            val src = start + j
+            out[j] = stereo[src]
+            out[windowSize + j] = stereo[totalSamples + src]
+        }
+        return out
+    }
+
     private fun stemCount(session: OrtSession): Int {
-        val info = session.inputInfo["mix"] ?: error("htdemucs model missing 'mix' input")
+        val info = session.outputInfo.values.firstOrNull()
+            ?: error("htdemucs model has no outputs")
         val shape = (info.info as ai.onnxruntime.TensorInfo).shape
-        check(shape.size == 3) { "htdemucs input must be 3D" }
+        check(shape.size == 4) { "htdemucs output must be 4D" }
         return shape[1].toInt()
     }
 
@@ -97,8 +164,9 @@ class HtDemucsSeparator @Inject constructor(
     private fun makeMixTensor(stereo: FloatArray, samples: Int): OnnxTensor {
         val buffer = ByteBuffer.allocateDirect(stereo.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
-        buffer.asFloatBuffer().put(stereo)
-        buffer.rewind()
+            .asFloatBuffer()
+        buffer.put(stereo)
+        buffer.position(0)
         return OnnxTensor.createTensor(
             environment,
             buffer,
@@ -126,26 +194,18 @@ class HtDemucsSeparator @Inject constructor(
         }
     }
 
-    private fun flatten(stems: Array<FloatArray>, index: Int): FloatArray = stems[index]
-
-    private fun mixMinusVocals(mix: FloatArray, vocals: FloatArray): FloatArray {
-        val out = FloatArray(mix.size)
-        for (i in mix.indices) {
-            out[i] = mix[i] - vocals[i]
-        }
-        return out
-    }
-
     /**
-     * Confirmed order for the public models. The probe ran the FP16
-     * 4-stem base and only stem index 2 had audible energy on a
-     * synthetic mix; that matches vocals for that configuration. The
-     * FT-Vocals variant outputs a single stem (vocals) directly.
+     * Stem order for the public HTDemucs ONNX models (confirmed by the
+     * StemSplitio model cards):
+     *
+     * - 4-stem: `[drums, bass, other, vocals]`  → vocals = 3
+     * - 6-stem: `[drums, bass, other, vocals, guitar, piano]` → vocals = 3
+     * - FT-Vocals outputs a single stem (vocals) → index 0
      */
     private fun vocalsStemIndex(modelId: String, numStems: Int): Int = when {
         numStems == 1 -> 0
-        numStems == 4 -> 2
-        numStems == 6 -> 0
+        numStems == 4 -> 3
+        numStems == 6 -> 3
         else -> numStems - 1
     }
 

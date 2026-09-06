@@ -231,8 +231,9 @@ class RoformerSeparator @Inject constructor(
         }
         val buffer = ByteBuffer.allocateDirect(floats.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
-        buffer.asFloatBuffer().put(floats)
-        buffer.rewind()
+            .asFloatBuffer()
+        buffer.put(floats)
+        buffer.position(0)
         return OnnxTensor.createTensor(
             environment,
             buffer,

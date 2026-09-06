@@ -28,7 +28,7 @@
       "embedded_in_asset_pack": false,
       "asset_path": "separation/htdemucs_6s_fp16weights.onnx",
       "tier_class": "htdemucs_6s_fp16",
-      "notes": "HTDemucs 6-stem FP16. 6 stems: vocals, drums, bass, guitar, piano, other. Audio a 44.1 kHz, stereo, float32. Vocals stem index = 0."
+      "notes": "HTDemucs 6-stem FP16. 6 stems: drums, bass, other, vocals, guitar, piano. Audio a 44.1 kHz, stereo, float32. Vocals stem index = 3."
     },
     {
       "id": "mel-band-roformer-vocals-hq-sep",

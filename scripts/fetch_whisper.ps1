@@ -1,6 +1,6 @@
 param(
     [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")),
-    [string]$Commit = "2ca53bb45e38748d07b310eeb36245a7157ac882"
+    [string]$Commit = "48f628a84833905ee4a0658ee6d4a5c915ce1997"
 )
 
 $ErrorActionPreference = "Stop"

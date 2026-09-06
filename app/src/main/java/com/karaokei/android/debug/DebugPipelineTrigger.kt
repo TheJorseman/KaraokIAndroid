@@ -163,14 +163,20 @@ class DebugPipelineTrigger @Inject constructor(
     fun handleSeedModelExtra(modelId: String?, relativePath: String?) {
         if (modelId.isNullOrBlank() || relativePath.isNullOrBlank()) return
         // The simplest mapping: derive the tier from the model id
-        // prefix. Both Balanced and HQ use the 4-stem base
-        // (`htdemucs-fp16-fast-sep`) at integration time.
+        // prefix and the type from the model family. Transcription
+        // models carry `whisper` in their id; everything else is a
+        // separation model.
         val tier = when {
             modelId.contains("hq", ignoreCase = true) -> ModelTier.HQ
             modelId.contains("balanced", ignoreCase = true) -> ModelTier.BALANCED
             else -> ModelTier.FAST
         }
-        handleSeedModel(tier, ModelType.SEPARATION, modelId, relativePath)
+        val type = if (modelId.contains("whisper", ignoreCase = true)) {
+            ModelType.TRANSCRIPTION
+        } else {
+            ModelType.SEPARATION
+        }
+        handleSeedModel(tier, type, modelId, relativePath)
     }
 
     /**

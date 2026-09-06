@@ -14,6 +14,9 @@ set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+# Use ggml's native threadpool instead of OpenMP; libomp on Android
+# adds overhead and under-performs the native pool for whisper.
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 
 # Android 15+ requires native libraries to be aligned to 16 KB pages.
 # The flag only makes sense at link time, not when the static
@@ -24,6 +27,14 @@ set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-z,max-page-size
 set(WHISPER_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../third_party/whisper.cpp")
 if(NOT EXISTS "${WHISPER_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored whisper.cpp at ${WHISPER_ROOT}")
+endif()
+
+# ARM64 Android defaults to armv8-a (NEON only, no DOTPROD), which makes
+# Q5_1 quantization fall back to the slow NEON path. Enable the
+# armv8.2-a dot-product extension so the fast DOTPROD kernels are used
+# on all modern devices.
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod" CACHE STRING "ggml: CPU architecture for ARM" FORCE)
 endif()
 
 add_subdirectory("${WHISPER_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/whisper.cpp" EXCLUDE_FROM_ALL)

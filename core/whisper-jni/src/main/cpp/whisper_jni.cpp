@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -139,17 +140,46 @@ Java_com_karaokei_core_whisper_WhisperBridge_nativeTranscribeFile(
     params.print_realtime = false;
     params.print_timestamps = false;
     params.no_timestamps = false;
-    params.token_timestamps = true;
-    params.split_on_word = true;
+    // DTW word timestamps (`token_timestamps = true`) and word-splitting
+    // are much slower; segment-level timestamps are enough for the
+    // karaoke alignment MVP.
+    params.token_timestamps = false;
+    params.split_on_word = false;
     params.translate = translate == JNI_TRUE;
-    params.language = language_value.empty() ? nullptr : language_value.c_str();
-    params.detect_language = language_value.empty() || language_value == "auto";
-    params.n_threads = 2;
+    // "auto" is expressed by leaving `language` empty/null, which makes
+    // `whisper_full` auto-detect the language and *continue* decoding.
+    // Setting `detect_language = true` would instead make whisper.cpp
+    // detect the language and return early without transcribing.
+    params.language = language_value.empty() || language_value == "auto"
+        ? nullptr
+        : language_value.c_str();
+    params.detect_language = false;
+    // Fast single-decoder greedy decoding: the default `greedy.best_of`
+    // is 5 (five decoders in parallel) and the temperature fallback can
+    // re-run the decode several times. Both are unnecessary for karaoke
+    // transcription and make long songs pathologically slow.
+    params.greedy.best_of = 1;
+    params.temperature_inc = 0.0f;
+    params.n_threads = std::max(1, std::min(4, (int) std::thread::hardware_concurrency()));
 
     const int result = whisper_full(native->context, params, samples.data(), static_cast<int>(samples.size()));
     if (result != 0) {
         call_error(env, callback, "whisper_full failed with code " + std::to_string(result));
         return result;
+    }
+
+    {
+        double sum_sq = 0.0;
+        for (float s : samples) sum_sq += static_cast<double>(s) * s;
+        double rms = samples.empty() ? 0.0 : std::sqrt(sum_sq / samples.size());
+        int total_tokens = 0;
+        const int n_seg = whisper_full_n_segments(native->context);
+        for (int s = 0; s < n_seg; ++s) {
+            total_tokens += whisper_full_n_tokens(native->context, s);
+        }
+        __android_log_print(ANDROID_LOG_INFO, TAG,
+            "whisper_full done: samples=%zu rms=%.5f segments=%d tokens=%d",
+            samples.size(), rms, n_seg, total_tokens);
     }
 
     jclass callback_class = env->GetObjectClass(callback);

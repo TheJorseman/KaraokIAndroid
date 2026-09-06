@@ -150,29 +150,18 @@ class SeparateSongUseCase @Inject constructor(
         samples: FloatArray,
         model: ModelEntity,
     ): SeparationResult {
-        val mono44_1k = HtDemucsAudio.padOrTruncate(
-            HtDemucsAudio.mono16kToMono44_1k(samples),
-            HtDemucsAudio.MODEL_SAMPLES_PER_WINDOW,
-        )
+        val mono44_1k = HtDemucsAudio.mono16kToMono44_1k(samples)
         val stereo = HtDemucsAudio.monoToStereo(mono44_1k)
         Log.i(TAG, "Running HTDemucs ${model.id} on ${mono44_1k.size} samples @44.1k")
-        val htResult = htDemucs.separate(stereo, model).getOrThrow()
+        val htResult = htDemucs.separate(stereo, model) { fraction ->
+            _progress.value = fraction * 0.95f
+        }.getOrThrow()
         _progress.value = 0.95f
         val vocalsMono44_1k = HtDemucsAudio.stereo44_1kToMono(htResult.vocals)
         val vocalsMono16k = HtDemucsAudio.mono44_1kToMono16k(vocalsMono44_1k)
-        val instrMono16k = FloatArray(samples.size.coerceAtLeast(vocalsMono16k.size))
-        for (i in instrMono16k.indices) {
-            val src = if (i < samples.size) samples[i] else 0f
-            val voc = if (i < vocalsMono16k.size) vocalsMono16k[i] else 0f
-            instrMono16k[i] = src - voc
-        }
-        val vocalsOut = if (vocalsMono16k.size == samples.size) {
-            vocalsMono16k
-        } else {
-            val padded = FloatArray(samples.size)
-            System.arraycopy(vocalsMono16k, 0, padded, 0, minOf(vocalsMono16k.size, samples.size))
-            padded
-        }
+        val vocalsOut = FloatArray(samples.size)
+        System.arraycopy(vocalsMono16k, 0, vocalsOut, 0, minOf(vocalsMono16k.size, samples.size))
+        val instrMono16k = FloatArray(samples.size) { i -> samples[i] - vocalsOut[i] }
         return SeparationResult(
             vocals = vocalsOut,
             instrumental = instrMono16k,
