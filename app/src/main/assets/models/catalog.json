@@ -1,20 +1,20 @@
 {
-  "version": 7,
-  "updated_at": "2026-08-05T08:00:00Z",
+  "version": 8,
+  "updated_at": "2026-09-06T18:00:00Z",
   "entries": [
     {
-      "id": "mdx-net-kara-2-fast-sep",
-      "name": "MDX-Net Karaoke 2 (Fast)",
+      "id": "htdemucs-ft-fast-sep",
+      "name": "HTDemucs FT (Fast)",
       "tier": "FAST",
       "type": "SEPARATION",
-      "url": "https://huggingface.co/masszhou/mdxnet/resolve/main/UVR_MDXNET_KARA_2.onnx",
-      "size_bytes": 52786726,
-      "checksum_sha256": "bf32e15105a09c0f7dddd2b67346146334d6f3ecb399ed7638eba2ab07cbf5f4",
+      "url": "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_fp16weights.onnx",
+      "size_bytes": 165612636,
+      "checksum_sha256": "0cbe651f535415c9d26a7bb614f7d322dd5a080fa0298f2e50f478030a994dce",
       "license": "MIT",
-      "embedded_in_asset_pack": true,
-      "asset_path": "separation/uvr_mdxnet_kara_2.onnx",
-      "tier_class": "mdx_net_kara_2",
-      "notes": "UVR MDX-Net Karaoke 2 (MIT, masszhou/mdxnet). Bundled in the APK so the Fast tier runs out of the box. Input: complex spectrogram [1, 4, 2048, 256] = (real, imag, mag, phase). Output: vocal estimate. Sample rate 16 kHz, n_fft=4096, hop=512."
+      "embedded_in_asset_pack": false,
+      "asset_path": "separation/htdemucs_ft_fp16.onnx",
+      "tier_class": "htdemucs_ft",
+      "notes": "HTDemucs FT (fine-tuned) 4-stem, 165 MB. Stems: drums, bass, other, vocals. Audio a 44.1 kHz, stereo, float32. Vocals stem index = 3."
     },
     {
       "id": "htdemucs-6s-fp16-balanced-sep",

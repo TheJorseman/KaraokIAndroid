@@ -182,7 +182,7 @@ def test_catalog_sync_runs_at_cold_start(install_apk: None, tmp_path: Path, emul
     rows = _wait_for_catalog(tmp_path, emulator_serial, expected_count=6, timeout_s=30)
     assert len(rows) >= 6, f"expected ≥6 catalog rows, got {list(rows)}"
     expected_ids = {
-        "mdx-net-kara-2-fast-sep",
+        "htdemucs-ft-fast-sep",
         "htdemucs-6s-fp16-balanced-sep",
         "mel-band-roformer-vocals-hq-sep",
         "whisper-tiny-q5-1-fast",
@@ -421,20 +421,20 @@ def test_three_tier_dispatch_routes_to_correct_separator(
     """
     _adb("shell", "pm", "clear", "com.karaokei.android.debug", serial=emulator_serial, timeout=30)
     rows = _wait_for_catalog(tmp_path, emulator_serial, expected_count=6, timeout_s=30)
-    assert "mdx-net-kara-2-fast-sep" in rows, (
-        f"MDX-Net Fast entry missing from catalog sync: {list(rows)}"
+    assert "htdemucs-ft-fast-sep" in rows, (
+        f"HTDemucs FT Fast entry missing from catalog sync: {list(rows)}"
     )
     # The dispatch table in SeparateSongUseCase routes by
     # `tierClass`; assert each tier resolves to a different
     # separator without actually invoking the inference. We do
     # this by mirroring the Kotlin logic in Python.
     dispatch = {
-        "mdx-net-kara-2-fast-sep": "MDX_NET",
+        "htdemucs-ft-fast-sep": "HTDEMUCS",
         "htdemucs-6s-fp16-balanced-sep": "HTDEMUCS",
         "mel-band-roformer-vocals-hq-sep": "ROFORMER",
     }
     expected_by_tier = {
-        "FAST": "MDX_NET",
+        "FAST": "HTDEMUCS",
         "BALANCED": "HTDEMUCS",
         "HQ": "ROFORMER",
     }
