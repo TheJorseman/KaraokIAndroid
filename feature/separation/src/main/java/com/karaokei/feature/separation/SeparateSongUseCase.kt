@@ -175,11 +175,10 @@ class SeparateSongUseCase @Inject constructor(
         model: ModelEntity,
     ): SeparationResult {
         // RoFormer expects 44.1 kHz stereo PCM. Resample mono 16 kHz
-        // source to 44.1 kHz mono, then broadcast to stereo.
-        val mono44_1k = HtDemucsAudio.padOrTruncate(
-            HtDemucsAudio.mono16kToMono44_1k(samples),
-            RoformerSeparator.N_FFT + RoformerSeparator.HOP * (RoformerSeparator.EXPECTED_FRAMES - 1),
-        )
+        // source to 44.1 kHz mono, then broadcast to stereo. The
+        // chunked separation handles arbitrary length via overlap-add;
+        // no upfront truncation.
+        val mono44_1k = HtDemucsAudio.mono16kToMono44_1k(samples)
         val stereo = HtDemucsAudio.monoToStereo(mono44_1k)
         Log.i(TAG, "Running RoFormer ${model.id} on ${mono44_1k.size} samples @44.1k")
         val chunkSamples = RoformerSeparator.HOP * (RoformerSeparator.EXPECTED_FRAMES - 1)

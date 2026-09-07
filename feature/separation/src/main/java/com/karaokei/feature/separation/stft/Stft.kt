@@ -10,8 +10,17 @@ import kotlin.math.sin
  * windowed PCM samples into the spectrogram tensors expected by the
  * ONNX graphs.
  *
- * The inverse (iSTFT) is also provided for the overlap-add
- * reconstruction of `vocals.wav` / `instrumental.wav`.
+ * The convention matches PyTorch's `torch.stft` / `torch.istft` with
+ * `center=True`, `pad_mode='reflect'`, periodic Hann, so the host-side
+ * STFT feeds the core ONNX a spectrogram identical to the one the
+ * upstream weights were trained on:
+ *
+ *  - forward: reflect-pad `windowSize/2` on each side, periodic Hann,
+ *    `numFrames = 1 + n / hop`. Output `[numFrames][2 * numBins]` with
+ *    `out[2k] = Re`, `out[2k+1] = -Im` (numpy rfft sign convention).
+ *  - inverse: conjugate-mirror to a full spectrum, positive-sign FFT
+ *    (i.e. `angleStep = +2π / len`) scaled by `1/N`, Hann overlap-add,
+ *    crop `windowSize/2` from each side.
  *
  * Not the fastest possible implementation (no native SIMD), but
  * adequate for the MVP and trivially testable. The ONNX inference
@@ -24,25 +33,23 @@ class Stft(
 
     val fftSize: Int = windowSize
     val numBins: Int = windowSize / 2 + 1
-    private val window: FloatArray = hannWindow(windowSize)
+    private val pad: Int = windowSize / 2
+    private val window: FloatArray = periodicHann(windowSize)
 
     /**
-     * Forward STFT returning the full per-frame complex spectrogram
-     * (real+imag packed per bin) so callers can build the dense
-     * `[frames, numBins, complex]` tensors that MDX-Net / RoFormer
-     * consume. Output shape: `[numFrames][2 * numBins]` where for
-     * each frame `out[2*k]` = real and `out[2*k+1]` = `-imag`
-     * (numpy `rfft` convention).
+     * Forward STFT (centered, reflect-padded). Output shape:
+     * `[numFrames][2 * numBins]` with `out[2k] = Re`, `out[2k+1] = -Im`.
      */
     fun transform(samples: FloatArray): Array<FloatArray> {
         val frames = numFrames(samples.size)
         val out = Array(frames) { FloatArray(2 * numBins) }
         val buffer = FloatArray(windowSize * 2)
         for (frame in 0 until frames) {
-            val start = frame * hopSize
+            val frameStart = frame * hopSize
             for (i in 0 until windowSize) {
-                val sample = if (start + i < samples.size) samples[start + i] else 0f
-                buffer[2 * i] = sample * window[i]
+                val paddedIdx = frameStart + i
+                val origIdx = paddedIdx - pad
+                buffer[2 * i] = reflectRead(samples, origIdx) * window[i]
                 buffer[2 * i + 1] = 0f
             }
             dftInPlace(buffer, out, frame)
@@ -50,10 +57,16 @@ class Stft(
         return out
     }
 
+    private fun reflectRead(samples: FloatArray, idx: Int): Float {
+        val n = samples.size
+        return when {
+            idx < 0 -> samples[-idx]
+            idx >= n -> samples[2 * n - 2 - idx]
+            else -> samples[idx]
+        }
+    }
+
     private fun dftInPlace(buffer: FloatArray, out: Array<FloatArray>, frame: Int) {
-        // Use a radix-2 Cooley-Tukey when windowSize is a power of two,
-        // which it is by default (2048). Falls back to a naive O(N^2)
-        // DFT otherwise.
         if ((windowSize and (windowSize - 1)) == 0) {
             fftInPlace(buffer)
             for (k in 0 until numBins) {
@@ -75,29 +88,28 @@ class Stft(
         }
     }
 
-    fun numFrames(samples: Int): Int = ((samples - windowSize) / hopSize).coerceAtLeast(0) + 1
+    /**
+     * Frame count for a centered STFT. With `center=True` the padded
+     * length is `n + 2 * pad`, so the number of frames is
+     * `1 + (n + 2 * pad - windowSize) / hop = 1 + n / hop`.
+     */
+    fun numFrames(samples: Int): Int = 1 + samples / hopSize
 
     /**
      * Inverse STFT. Reconstructs a time-domain signal from a complex
-     * spectrogram by inverse FFT, windowing, and overlap-add with the
-     * Hann window-correction factor (3/8 for periodic Hann at 50%
-     * overlap).
-     *
-     * @param real 2-D array `[numFrames][numBins]` of real parts.
-     * @param imag 2-D array `[numFrames][numBins]` of imaginary parts.
-     * @param expectedLength The expected number of samples. The output
-     * is cropped to this length so trailing zero-pad artefacts are
-     * dropped.
+     * spectrogram by inverse FFT, windowing, and overlap-add, with the
+     * `windowSize/2` center pad cropped from each end. Output is always
+     * exactly `expectedLength` samples (padded with zeros at the tail
+     * if the iSTFT naturally yields fewer samples — mirrors PyTorch's
+     * `torch.istft(..., length=n)` padding/cropping).
      */
     fun inverse(real: Array<FloatArray>, imag: Array<FloatArray>, expectedLength: Int): FloatArray {
         val numFrames = real.size
-        val out = FloatArray(expectedLength + windowSize)
-        val weight = FloatArray(expectedLength + windowSize)
+        val outLen = (numFrames - 1) * hopSize + windowSize
+        val out = FloatArray(outLen)
+        val weight = FloatArray(outLen)
         val buffer = FloatArray(windowSize * 2)
         for (frame in 0 until numFrames) {
-            // `transform` writes `re - i*im` (numpy convention); flip
-            // the imaginary sign so the FFT operates in the internal
-            // `+i` convention.
             for (k in 0 until numBins) {
                 buffer[2 * k] = real[frame][k]
                 buffer[2 * k + 1] = -imag[frame][k]
@@ -112,16 +124,20 @@ class Stft(
             for (i in 0 until windowSize) {
                 val sample = buffer[2 * i] * window[i]
                 val idx = start + i
-                if (idx < out.size) {
-                    out[idx] += sample
-                    weight[idx] += window[i] * window[i]
-                }
+                out[idx] += sample
+                weight[idx] += window[i] * window[i]
             }
         }
         for (i in out.indices) {
             if (weight[i] > 1e-9f) out[i] /= weight[i]
         }
-        return out.copyOfRange(0, expectedLength.coerceAtMost(out.size))
+        val reconstructed = out.copyOfRange(pad, pad + (outLen - 2 * pad))
+        // Mirror torch.istft(..., length=n): always return exactly n
+        // samples, zero-padding the tail if the iSTFT produced fewer.
+        if (reconstructed.size >= expectedLength) return reconstructed.copyOfRange(0, expectedLength)
+        val padded = FloatArray(expectedLength)
+        System.arraycopy(reconstructed, 0, padded, 0, reconstructed.size)
+        return padded
     }
 
     /**
@@ -130,8 +146,9 @@ class Stft(
      */
     fun inverse(packed: Array<FloatArray>, expectedLength: Int): FloatArray {
         val numFrames = packed.size
-        val out = FloatArray(expectedLength + windowSize)
-        val weight = FloatArray(expectedLength + windowSize)
+        val outLen = (numFrames - 1) * hopSize + windowSize
+        val out = FloatArray(outLen)
+        val weight = FloatArray(outLen)
         val buffer = FloatArray(windowSize * 2)
         for (frame in 0 until numFrames) {
             val row = packed[frame]
@@ -149,32 +166,26 @@ class Stft(
             for (i in 0 until windowSize) {
                 val sample = buffer[2 * i] * window[i]
                 val idx = start + i
-                if (idx < out.size) {
-                    out[idx] += sample
-                    weight[idx] += window[i] * window[i]
-                }
+                out[idx] += sample
+                weight[idx] += window[i] * window[i]
             }
         }
         for (i in out.indices) {
             if (weight[i] > 1e-9f) out[i] /= weight[i]
         }
-        return out.copyOfRange(0, expectedLength.coerceAtMost(out.size))
+        val reconstructed = out.copyOfRange(pad, pad + (outLen - 2 * pad))
+        if (reconstructed.size >= expectedLength) return reconstructed.copyOfRange(0, expectedLength)
+        val padded = FloatArray(expectedLength)
+        System.arraycopy(reconstructed, 0, padded, 0, reconstructed.size)
+        return padded
     }
 
     private fun inverseFftInPlace(buffer: FloatArray) {
-        // Same radix-2 FFT, then conjugate the imaginary parts so the
-        // forward FFT becomes its inverse (scaled by N).
-        fftInPlace(buffer)
-        val n = windowSize
-        for (i in 0 until n) {
-            buffer[2 * i] /= n
-            buffer[2 * i + 1] = -buffer[2 * i + 1] / n
-        }
+        ifftInPlace(buffer)
     }
 
     private fun fftInPlace(buffer: FloatArray) {
-        // Standard iterative radix-2 FFT. Replaces [re, im, re, im, ...]
-        // in place. See e.g. Sedgewick, "Algorithms".
+        // Standard iterative radix-2 FFT with negative twiddle.
         val n = windowSize
         var j = 0
         for (k in 1 until n) {
@@ -193,13 +204,47 @@ class Stft(
                 buffer[2 * j + 1] = ti
             }
         }
+        butterfly(buffer, negTwiddle = true)
+    }
+
+    private fun ifftInPlace(buffer: FloatArray) {
+        // Inverse FFT: same bit-reversal + butterfly with positive
+        // twiddle, then divide by N. The forward/inverse share the
+        // butterfly core; only the twiddle sign differs.
+        val n = windowSize
+        var j = 0
+        for (k in 1 until n) {
+            var bit = n shr 1
+            while (j and bit != 0) {
+                j = j xor bit
+                bit = bit shr 1
+            }
+            j = j or bit
+            if (j > k) {
+                val tr = buffer[2 * k]
+                val ti = buffer[2 * k + 1]
+                buffer[2 * k] = buffer[2 * j]
+                buffer[2 * k + 1] = buffer[2 * j + 1]
+                buffer[2 * j] = tr
+                buffer[2 * j + 1] = ti
+            }
+        }
+        butterfly(buffer, negTwiddle = false)
+        val invN = 1f / n
+        for (i in 0 until n) {
+            buffer[2 * i] *= invN
+            buffer[2 * i + 1] *= invN
+        }
+    }
+
+    private fun butterfly(buffer: FloatArray, negTwiddle: Boolean) {
+        val n = windowSize
         var len = 2
         while (len <= n) {
             val half = len / 2
-            val angleStep = -2.0 * Math.PI / len
+            val angleStep = if (negTwiddle) -2.0 * Math.PI / len else 2.0 * Math.PI / len
             var i = 0
             while (i < n) {
-                var k = 0
                 for (m in 0 until half) {
                     val angle = angleStep * m
                     val wr = cos(angle).toFloat()
@@ -212,7 +257,6 @@ class Stft(
                     buffer[2 * (i + m + half) + 1] = buffer[2 * (i + m) + 1] - tim
                     buffer[2 * (i + m)] += tre
                     buffer[2 * (i + m) + 1] += tim
-                    k += 2
                 }
                 i += len
             }
@@ -220,19 +264,12 @@ class Stft(
         }
     }
 
-    private fun hannWindow(size: Int): FloatArray {
-        val out = FloatArray(size)
-        for (i in 0 until size) {
-            out[i] = (0.5 - 0.5 * cos(2.0 * Math.PI * i / (size - 1))).toFloat()
-        }
-        return out
-    }
-
     companion object {
         /**
-         * Periodic (DFT-even) Hann window. Slightly different from the
-         * symmetric Hann produced by the symmetric formula; periodic
-         * Hann is the right choice for STFT overlap-add.
+         * Periodic (DFT-even) Hann window. Matches PyTorch's
+         * `torch.hann_window(n, periodic=True)` default, so the
+         * forward STFT feeds the ONNX core a spectrogram consistent
+         * with the upstream training pre-processing.
          */
         fun periodicHann(size: Int): FloatArray {
             val out = FloatArray(size)
