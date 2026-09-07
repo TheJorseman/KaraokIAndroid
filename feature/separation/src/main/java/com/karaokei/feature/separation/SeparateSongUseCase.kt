@@ -181,7 +181,13 @@ class SeparateSongUseCase @Inject constructor(
         val mono44_1k = HtDemucsAudio.mono16kToMono44_1k(samples)
         val stereo = HtDemucsAudio.monoToStereo(mono44_1k)
         Log.i(TAG, "Running RoFormer ${model.id} on ${mono44_1k.size} samples @44.1k")
-        val chunkSamples = RoformerSeparator.HOP * (RoformerSeparator.EXPECTED_FRAMES - 1)
+        // The chunk length is chosen by RoformerSeparator based on the
+        // loaded model's expected T (1100 for the musetric ONNX, 256
+        // for the re-exported core). We use a conservative default
+        // (the larger 1100) for the chunk count estimation; the
+        // separator will pick the right value when it opens the
+        // session.
+        val chunkSamples = RoformerSeparator.HOP * (RoformerSeparator.EXPECTED_FRAMES_MUSETRIC - 1)
         val totalChunks = maxOf(1, (mono44_1k.size - chunkSamples + RoformerSeparator.HOP * RoformerSeparator.STEP_FRAMES - 1) /
             (RoformerSeparator.HOP * RoformerSeparator.STEP_FRAMES))
         val rfResult = roformer.separate(stereo, model) { chunkProgress ->

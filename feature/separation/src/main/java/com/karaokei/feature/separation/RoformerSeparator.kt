@@ -62,8 +62,9 @@ class RoformerSeparator @Inject constructor(
             val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
             val session = environment.createSession(localPath, options)
             try {
+                val expectedFrames = pickExpectedFrames(localPath)
                 val stft = Stft(windowSize = N_FFT, hopSize = HOP)
-                val chunkSamples = HOP * (EXPECTED_FRAMES - 1)
+                val chunkSamples = HOP * (expectedFrames - 1)
                 val stepSamples = HOP * STEP_FRAMES
                 val overlap = chunkSamples - stepSamples
                 val totalSamples = stereoPcm.size / 2
@@ -71,7 +72,7 @@ class RoformerSeparator @Inject constructor(
                     1,
                     (totalSamples - overlap + stepSamples - 1) / stepSamples,
                 )
-                Log.i(TAG, "RoFormer separate: $totalSamples stereo samples, $chunkCount chunk(s)")
+                Log.i(TAG, "RoFormer separate: $totalSamples stereo samples, $chunkCount chunk(s) (T=$expectedFrames)")
 
                 val outputLeft = FloatArray(totalSamples)
                 val outputRight = FloatArray(totalSamples)
@@ -89,7 +90,7 @@ class RoformerSeparator @Inject constructor(
                             chunkRight[i] = stereoPcm[2 * src + 1]
                         }
                     }
-                    val vocals = runChunk(session, chunkLeft, chunkRight, stft)
+                    val vocals = runChunk(session, chunkLeft, chunkRight, stft, expectedFrames)
                     val overlapWindow = hammingWindow(chunkSamples)
                     for (i in 0 until chunkSamples) {
                         val idx = start + i
@@ -136,16 +137,17 @@ class RoformerSeparator @Inject constructor(
         chunkLeft: FloatArray,
         chunkRight: FloatArray,
         stft: Stft,
+        expectedFrames: Int,
     ): FloatArray {
         val stftLeft = stft.transform(chunkLeft)
         val stftRight = stft.transform(chunkRight)
-        val numFrames = EXPECTED_FRAMES.coerceAtMost(stftLeft.size)
+        val numFrames = expectedFrames.coerceAtMost(stftLeft.size)
         val numBins = stft.numBins
         // Pad STFT frames with zeros if the chunk produced fewer than
-        // EXPECTED_FRAMES (which only happens for the trailing chunk
-        // when totalSamples < chunkSamples).
-        val paddedLeft = Array(EXPECTED_FRAMES) { FloatArray(2 * numBins) }
-        val paddedRight = Array(EXPECTED_FRAMES) { FloatArray(2 * numBins) }
+        // `expectedFrames` (only happens for the trailing chunk when
+        // totalSamples < chunkSamples, or with a small-window re-export).
+        val paddedLeft = Array(expectedFrames) { FloatArray(2 * numBins) }
+        val paddedRight = Array(expectedFrames) { FloatArray(2 * numBins) }
         for (f in 0 until numFrames) {
             for (k in 0 until numBins) {
                 val re = stftLeft[f][k * 2]
@@ -158,21 +160,21 @@ class RoformerSeparator @Inject constructor(
                 paddedRight[f][2 * k + 1] = im2
             }
         }
-        val inputTensor = buildInputTensor(paddedLeft, paddedRight)
+        val inputTensor = buildInputTensor(paddedLeft, paddedRight, expectedFrames)
         val outputs = session.run(mapOf(INPUT_NAME to inputTensor))
         inputTensor.close()
         val outTensor = outputs[0] as? OnnxTensor
             ?: error("roformer produced no ${OUTPUT_NAME} tensor")
         val raw = outTensor.value as Array<*>
         outTensor.close()
-        // Output shape [1, 2050, EXPECTED_FRAMES, 2] with packed index
+        // Output shape [1, 2050, expectedFrames, 2] with packed index
         // `2 * freq + channel`. Channel 0 = left, channel 1 = right.
         val firstBatch = raw[0] as Array<Array<FloatArray>>
-        val maskLeftRe = FloatArray(EXPECTED_FRAMES * numBins)
-        val maskLeftIm = FloatArray(EXPECTED_FRAMES * numBins)
-        val maskRightRe = FloatArray(EXPECTED_FRAMES * numBins)
-        val maskRightIm = FloatArray(EXPECTED_FRAMES * numBins)
-        for (f in 0 until EXPECTED_FRAMES) {
+        val maskLeftRe = FloatArray(expectedFrames * numBins)
+        val maskLeftIm = FloatArray(expectedFrames * numBins)
+        val maskRightRe = FloatArray(expectedFrames * numBins)
+        val maskRightIm = FloatArray(expectedFrames * numBins)
+        for (f in 0 until expectedFrames) {
             for (k in 0 until numBins) {
                 val leftRow = firstBatch[2 * k][f]
                 val rightRow = firstBatch[2 * k + 1][f]
@@ -184,9 +186,9 @@ class RoformerSeparator @Inject constructor(
             }
         }
         // Apply mask: vocals_stft = mask * input_stft (complex multiply)
-        val vocalsLeftPacked = Array(EXPECTED_FRAMES) { FloatArray(2 * numBins) }
-        val vocalsRightPacked = Array(EXPECTED_FRAMES) { FloatArray(2 * numBins) }
-        for (f in 0 until EXPECTED_FRAMES) {
+        val vocalsLeftPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
+        val vocalsRightPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
+        for (f in 0 until expectedFrames) {
             for (k in 0 until numBins) {
                 val idx = f * numBins + k
                 val re = paddedLeft[f][2 * k]
@@ -216,6 +218,7 @@ class RoformerSeparator @Inject constructor(
     private fun buildInputTensor(
         left: Array<FloatArray>,
         right: Array<FloatArray>,
+        expectedFrames: Int,
     ): OnnxTensor {
         // Layout: outer bins × 2 channels (interleaved as
         // 2 * freq + channel), inner real/imag. The 2 channels map
@@ -223,14 +226,14 @@ class RoformerSeparator @Inject constructor(
         // [1, freq_slot, frame, 2] (row-major, frame varies fastest
         // within a freq slot), so freq_slot must be the OUTER loop.
         val numBins = left[0].size / 2
-        val floats = FloatArray(EXPECTED_FRAMES * 2 * numBins * 2)
+        val floats = FloatArray(expectedFrames * 2 * numBins * 2)
         var i = 0
         for (k in 0 until numBins) {
-            for (f in 0 until EXPECTED_FRAMES) {
+            for (f in 0 until expectedFrames) {
                 floats[i++] = left[f][2 * k]
                 floats[i++] = left[f][2 * k + 1]
             }
-            for (f in 0 until EXPECTED_FRAMES) {
+            for (f in 0 until expectedFrames) {
                 floats[i++] = right[f][2 * k]
                 floats[i++] = right[f][2 * k + 1]
             }
@@ -243,8 +246,23 @@ class RoformerSeparator @Inject constructor(
         return OnnxTensor.createTensor(
             environment,
             buffer,
-            longArrayOf(1, (2 * numBins).toLong(), EXPECTED_FRAMES.toLong(), 2L),
+            longArrayOf(1, (2 * numBins).toLong(), expectedFrames.toLong(), 2L),
         )
+    }
+
+    /**
+     * Pick the ONNX input time dim for the loaded model.
+     *
+     * The musetric ONNX (`syhft_core_t1100.onnx` + `.data`) is a fixed
+     * `T=1100` graph; the re-exported core (`syhft_core_t256_single.onnx`)
+     * has dynamic `T` and the host picks a smaller window that fits an
+     * 8 GB device. The filename is enough to distinguish them without
+     * introspecting the graph.
+     */
+    private fun pickExpectedFrames(modelPath: String): Int {
+        val name = java.io.File(modelPath).name
+        return if (name.startsWith("syhft_core_t1100")) EXPECTED_FRAMES_MUSETRIC
+        else EXPECTED_FRAMES_TINY
     }
 
     private fun hammingWindow(size: Int): FloatArray {
@@ -260,11 +278,15 @@ class RoformerSeparator @Inject constructor(
 
         const val N_FFT: Int = 2048
         const val HOP: Int = 441
-        // Re-exported core with a small time window. The full [60, 8, T, T]
-        // attention score grows with T^2 and OOMs 8 GB devices at the
-        // original T=1100; T=256 keeps the score ~[60, 8, 256, 256] (126 MB
-        // fp32) so HQ runs within the low-memory-killer budget.
-        const val EXPECTED_FRAMES: Int = 256
+        // The musetric ONNX (`syhft_core_t1100.onnx`) is exported at the
+        // model's natural context window T=1100 with attention split for
+        // mobile memory budgets; pass `expectedFrames = 1100` to use it.
+        // The re-exported core (`syhft_core_t256_single.onnx`) accepts
+        // any T >= 256; the smaller window keeps peak fp32 attention at
+        // ~[60, 8, 256, 256] (126 MB) for the 8 GB devices that OOM'd on
+        // the full attention at T=1100.
+        const val EXPECTED_FRAMES_TINY: Int = 256
+        const val EXPECTED_FRAMES_MUSETRIC: Int = 1100
         const val STEP_FRAMES: Int = 128 // 50% overlap-add
 
         const val INPUT_NAME: String = "stft_repr"
