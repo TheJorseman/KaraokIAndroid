@@ -35,16 +35,16 @@
       "name": "Mel-Band RoFormer Vocals (HQ)",
       "tier": "HQ",
       "type": "SEPARATION",
-      "url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx",
-      "size_bytes": 5308300,
-      "checksum_sha256": "dde2bfe8f85d2c12efa24ce4d45cc13e8709b8a72e277a93f130d496d948e918",
+      "url": "https://huggingface.co/musetric/vocal-separation-roformer-onnx/resolve/main/syhft_core_t1100.onnx",
+      "size_bytes": 7041719,
+      "checksum_sha256": "8b624200ac9bfc76c38fbcc9dcde3901f307acd6ee7e95b5b0a6cb3022585758",
       "license": "MIT",
       "embedded_in_asset_pack": false,
-      "asset_path": "separation/syhft_core_folded_fp16_webgpu.onnx",
-      "sidecar_url": "https://huggingface.co/silverdaw/mel-band-roformer-vocals-onnx/resolve/main/syhft_core_folded_fp16_webgpu.onnx.data",
-      "sidecar_path": "separation/syhft_core_folded_fp16_webgpu.onnx.data",
+      "asset_path": "separation/syhft_core_t1100.onnx",
+      "sidecar_url": "https://huggingface.co/musetric/vocal-separation-roformer-onnx/resolve/main/syhft_core_t1100.onnx.data",
+      "sidecar_path": "separation/syhft_core_t1100.onnx.data",
       "tier_class": "mel_band_roformer_fp16",
-      "notes": "Mel-Band RoFormer FP16 (silverdaw, MIT). Input: complex spectrogram [1, 2050, 1101, 2] (real+imag). Output: vocal spectrogram same shape. Sample rate 44.1 kHz, n_fft=2048, hop=441, periodic Hann."
+      "notes": "Mel-Band RoFormer FP16 (musetric, MIT). T=1100 window with the attention queries split into 64-row blocks so the peak activation is ~[60,1100,1536] instead of the OOM-inducing full [60,8,T,T] score. Input: complex spectrogram [1, 2050, 1100, 2]. Output: vocal mask same shape. Sample rate 44.1 kHz, n_fft=2048, hop=441, periodic Hann."
     },
     {
       "id": "whisper-tiny-q5-1-fast",

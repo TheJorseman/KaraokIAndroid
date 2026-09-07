@@ -256,7 +256,11 @@ class RoformerSeparator @Inject constructor(
 
         const val N_FFT: Int = 2048
         const val HOP: Int = 441
-        const val EXPECTED_FRAMES: Int = 1101
+        // The musetric export uses T = 1100 (the reference 1101 rounded
+        // down to a multiple of four) and splits the attention queries so
+        // the peak activation is ~[60, 1100, 1536] instead of the full
+        // [60, 8, T, T] score that OOMs smaller devices.
+        const val EXPECTED_FRAMES: Int = 1100
         const val STEP_FRAMES: Int = 800 // 8 s step (~3 s overlap)
 
         const val INPUT_NAME: String = "stft_repr"
