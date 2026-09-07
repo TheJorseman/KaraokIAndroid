@@ -43,6 +43,7 @@ class Stft(
             for (i in 0 until windowSize) {
                 val sample = if (start + i < samples.size) samples[start + i] else 0f
                 buffer[2 * i] = sample * window[i]
+                buffer[2 * i + 1] = 0f
             }
             dftInPlace(buffer, out, frame)
         }

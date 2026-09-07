@@ -33,8 +33,8 @@ import kotlin.math.sin
  *
  * - **STFT** - `n_fft = 2048`, `hop = 441`, 44.1 kHz, periodic Hann,
  *   reflect-padding by `n_fft/2`. One chunk = `441 * (frames - 1)`
- *   samples ≈ 11 s with the 1101-frame default. We window in 11 s
- *   chunks with 3 s overlap (8 s step) and Hamming overlap-add so
+ *   samples ≈ 2.6 s with the 256-frame default. We window in 2.6 s
+ *   chunks with 50% overlap (128-frame step) and Hamming overlap-add so
  *   longer songs are processed correctly.
  * - **Input tensor** - `stft_repr` `[1, 2050, frames, 2]` =
  *   `(batch, (n_fft/2 + 1) * channels, frames, complex)` with packed
@@ -165,7 +165,7 @@ class RoformerSeparator @Inject constructor(
             ?: error("roformer produced no ${OUTPUT_NAME} tensor")
         val raw = outTensor.value as Array<*>
         outTensor.close()
-        // Output shape [1, 2050, 1101, 2] with packed index
+        // Output shape [1, 2050, EXPECTED_FRAMES, 2] with packed index
         // `2 * freq + channel`. Channel 0 = left, channel 1 = right.
         val firstBatch = raw[0] as Array<Array<FloatArray>>
         val maskLeftRe = FloatArray(EXPECTED_FRAMES * numBins)
@@ -219,14 +219,18 @@ class RoformerSeparator @Inject constructor(
     ): OnnxTensor {
         // Layout: outer bins × 2 channels (interleaved as
         // 2 * freq + channel), inner real/imag. The 2 channels map
-        // to left=0, right=1.
+        // to left=0, right=1. The tensor shape is
+        // [1, freq_slot, frame, 2] (row-major, frame varies fastest
+        // within a freq slot), so freq_slot must be the OUTER loop.
         val numBins = left[0].size / 2
         val floats = FloatArray(EXPECTED_FRAMES * 2 * numBins * 2)
         var i = 0
-        for (f in 0 until EXPECTED_FRAMES) {
-            for (k in 0 until numBins) {
+        for (k in 0 until numBins) {
+            for (f in 0 until EXPECTED_FRAMES) {
                 floats[i++] = left[f][2 * k]
                 floats[i++] = left[f][2 * k + 1]
+            }
+            for (f in 0 until EXPECTED_FRAMES) {
                 floats[i++] = right[f][2 * k]
                 floats[i++] = right[f][2 * k + 1]
             }
@@ -256,12 +260,12 @@ class RoformerSeparator @Inject constructor(
 
         const val N_FFT: Int = 2048
         const val HOP: Int = 441
-        // The musetric export uses T = 1100 (the reference 1101 rounded
-        // down to a multiple of four) and splits the attention queries so
-        // the peak activation is ~[60, 1100, 1536] instead of the full
-        // [60, 8, T, T] score that OOMs smaller devices.
-        const val EXPECTED_FRAMES: Int = 1100
-        const val STEP_FRAMES: Int = 800 // 8 s step (~3 s overlap)
+        // Re-exported core with a small time window. The full [60, 8, T, T]
+        // attention score grows with T^2 and OOMs 8 GB devices at the
+        // original T=1100; T=256 keeps the score ~[60, 8, 256, 256] (126 MB
+        // fp32) so HQ runs within the low-memory-killer budget.
+        const val EXPECTED_FRAMES: Int = 256
+        const val STEP_FRAMES: Int = 128 // 50% overlap-add
 
         const val INPUT_NAME: String = "stft_repr"
         const val OUTPUT_NAME: String = "masks"

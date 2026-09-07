@@ -24,13 +24,24 @@ import com.karaokei.feature.karaoke.engine.KaraokeState
 /**
  * Compose Canvas renderer for the karaoke lyrics.
  *
- * Layout:
- *  - The active line is centred vertically.
- *  - One previous line above (faded).
+ * Layout (vertical stack, top to bottom):
+ *  - One previous line above the active line (faded, smaller).
+ *  - The active line, centred vertically, large, with per-word
+ *    progressive illumination.
  *  - One next line below (faded, smaller).
  *
- * The active line is drawn with per-word illumination: a horizontal
- * gradient reveals each word up to its `wordProgress` (0..1).
+ * Active line drawing:
+ *  1. Draw the whole line in the "upcoming" colour so the reader
+ *     sees the shape of the upcoming text.
+ *  2. For each word whose start time is in the past, redraw it in
+ *     the "active" colour. For the word currently being sung
+ *     (state.wordIndex), draw a horizontal gradient that reveals it
+ *     from the left up to wordProgress.
+ *  3. Words not yet reached stay in the upcoming colour.
+ *
+ * Per-word measurement avoids the coarse "widthPerChar" estimate
+ * the previous version used, which made the highlight drift when a
+ * line mixed narrow and wide glyphs.
  */
 @Composable
 fun KaraokeLyricsRenderer(
@@ -50,25 +61,18 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActive(
     state: KaraokeState.Active,
     measurer: TextMeasurer,
 ) {
-    val line = state.line
-    val previous = previousLine(line)
-    val next = nextLine(line)
-
     val centerY = size.height * 0.55f
     val activeStyle = baseStyle(36.sp)
     val fadedStyle = baseStyle(22.sp)
 
-    if (previous != null) {
-        drawCenteredLine(previous, measurer, fadedStyle, centerY - 80f, KaraokePalette.LyricPast)
+    state.previousLine?.let { prev ->
+        drawCenteredLine(prev, measurer, fadedStyle, centerY - 70f, KaraokePalette.LyricPast)
     }
-    drawLineWithProgressiveHighlight(line, state, measurer, activeStyle, centerY)
-    if (next != null) {
-        drawCenteredLine(next, measurer, fadedStyle, centerY + 80f, KaraokePalette.LyricPast)
+    drawActiveLine(state, measurer, activeStyle, centerY)
+    state.nextLine?.let { nxt ->
+        drawCenteredLine(nxt, measurer, fadedStyle, centerY + 60f, KaraokePalette.LyricUpcoming)
     }
 }
-
-private fun previousLine(line: KaraokeLine): KaraokeLine? = null
-private fun nextLine(line: KaraokeLine): KaraokeLine? = null
 
 private fun baseStyle(size: TextUnit): TextStyle = TextStyle(
     fontSize = size,
@@ -95,41 +99,94 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCenteredLine(
     drawText(result, color = color, topLeft = Offset(left, top))
 }
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLineWithProgressiveHighlight(
-    line: KaraokeLine,
+/**
+ * Draw the active line with per-word illumination.
+ *
+ * Each word is laid out separately against the shared text baseline so
+ * the highlight ends exactly at the current word's right edge. The
+ * current word gets a horizontal gradient that reveals `wordProgress`
+ * of its width.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveLine(
     state: KaraokeState.Active,
     measurer: TextMeasurer,
     style: TextStyle,
     centerY: Float,
 ) {
-    // Pass 1: draw the full line in muted white to establish the
-    // baseline. Pass 2: redraw each word up to the current one with
-    // a horizontal gradient that respects wordProgress.
-    val text = line.words.joinToString(" ") { it.text }
-    val result = measurer.measure(text, style)
-    val left = (size.width - result.size.width) / 2f
-    val top = centerY - result.size.height / 2f
-    drawText(result, color = KaraokePalette.LyricUpcoming, topLeft = Offset(left, top))
+    val words = state.line.words
+    if (words.isEmpty()) return
 
-    val widthPerChar = result.size.width.toFloat() / text.length.coerceAtLeast(1)
-    val highlightEndX = result.size.width.toFloat() * computeOverallProgress(line, state)
-    val brush = Brush.horizontalGradient(
-        colors = listOf(KaraokePalette.LyricActive, KaraokePalette.HighlightPrimary),
-        startX = left,
-        endX = left + highlightEndX,
-    )
-    drawText(
-        result,
-        brush = brush,
-        topLeft = Offset(left, top),
-    )
+    val wordGap = measurer.measure(" ", style).size.width.toFloat()
+    val widths = FloatArray(words.size)
+    for (i in words.indices) {
+        widths[i] = measurer.measure(words[i].text, style).size.width.toFloat()
+    }
+
+    val totalWidth = widths.sum() + wordGap * (words.size - 1)
+    val startX = (size.width - totalWidth) / 2f
+    val baselineY = centerY - style.fontSize.toPx() / 2f * 0.8f
+
+    // Pass 1 — upcoming text (faded white).
+    for (i in words.indices) {
+        val left = wordLeft(startX, widths, wordGap, i)
+        val result = measurer.measure(words[i].text, style)
+        drawText(result, color = KaraokePalette.LyricUpcoming, topLeft = Offset(left, baselineY))
+    }
+
+    // Pass 2 — fully-sung words in solid active colour.
+    val sungUpTo = state.wordIndex
+    for (i in 0 until sungUpTo) {
+        if (i >= words.size) break
+        val left = wordLeft(startX, widths, wordGap, i)
+        val result = measurer.measure(words[i].text, style)
+        drawText(result, color = KaraokePalette.LyricActive, topLeft = Offset(left, baselineY))
+    }
+
+    // Pass 3 — current word with horizontal gradient up to wordProgress.
+    // The brush stops at `reveal` and turns transparent so the
+    // upcoming text drawn in Pass 1 stays visible on the right.
+    if (sungUpTo in words.indices) {
+        val i = sungUpTo
+        val left = wordLeft(startX, widths, wordGap, i)
+        val result = measurer.measure(words[i].text, style)
+        val wordWidth = result.size.width.toFloat()
+        val reveal = (wordWidth * state.wordProgress.coerceIn(0f, 1f)).toFloat()
+        if (reveal > 0f && wordWidth > 0f) {
+            val revealStop = (reveal / wordWidth).coerceIn(0f, 1f)
+            val brush = if (revealStop >= 1f) {
+                Brush.horizontalGradient(
+                    colors = listOf(KaraokePalette.LyricActive, KaraokePalette.HighlightPrimary),
+                    startX = left,
+                    endX = left + wordWidth,
+                )
+            } else {
+                Brush.horizontalGradient(
+                    colorStops = arrayOf(
+                        0f to KaraokePalette.LyricActive,
+                        revealStop to KaraokePalette.HighlightPrimary,
+                        revealStop to Color.Transparent,
+                        1f to Color.Transparent,
+                    ),
+                    startX = left,
+                    endX = left + wordWidth,
+                )
+            }
+            drawText(
+                textMeasurer = measurer,
+                text = words[i].text,
+                style = style.copy(brush = brush),
+                topLeft = Offset(left, baselineY),
+            )
+        }
+    }
 }
 
-private fun computeOverallProgress(line: KaraokeLine, state: KaraokeState.Active): Float {
-    val charsBefore = line.words.take(state.wordIndex).sumOf { it.text.length + 1 }
-    val currentWord = line.words.getOrNull(state.wordIndex) ?: return 0f
-    val totalChars = line.words.sumOf { it.text.length } + (line.words.size - 1)
-    if (totalChars == 0) return 0f
-    val charsNow = charsBefore + (currentWord.text.length * state.wordProgress).toInt()
-    return (charsNow.toFloat() / totalChars).coerceIn(0f, 1f)
+/**
+ * Compute the left X for word `i` given the cumulative widths and the
+ * inter-word gap. Avoids allocating a running list per frame.
+ */
+private fun wordLeft(startX: Float, widths: FloatArray, wordGap: Float, i: Int): Float {
+    var x = startX
+    for (j in 0 until i) x += widths[j] + wordGap
+    return x
 }
