@@ -140,11 +140,11 @@ Java_com_karaokei_core_whisper_WhisperBridge_nativeTranscribeFile(
     params.print_realtime = false;
     params.print_timestamps = false;
     params.no_timestamps = false;
-    // DTW word timestamps (`token_timestamps = true`) and word-splitting
-    // are much slower; segment-level timestamps are enough for the
-    // karaoke alignment MVP.
-    params.token_timestamps = false;
-    params.split_on_word = false;
+    // Word-level timestamps are required for the karaoke highlighting;
+    // enable DTW word timestamps and word-splitting so every token gets
+    // a real start/end time.
+    params.token_timestamps = true;
+    params.split_on_word = true;
     params.translate = translate == JNI_TRUE;
     // "auto" is expressed by leaving `language` empty/null, which makes
     // `whisper_full` auto-detect the language and *continue* decoding.
@@ -206,7 +206,10 @@ Java_com_karaokei_core_whisper_WhisperBridge_nativeTranscribeFile(
         for (int token = 0; token < token_count; ++token) {
             const char * token_text = whisper_full_get_token_text(native->context, segment, token);
             const whisper_token_data data = whisper_full_get_token_data(native->context, segment, token);
+            // Skip special tokens (`<|...|>`) and DTW timestamp markers
+            // (`[_BEG_]`, `[_TT_150]`) so they don't leak into the words.
             if (token_text == nullptr || token_text[0] == '<') continue;
+            if (token_text[0] == '[' && token_text[1] == '_') continue;
             words += token_text;
             words += '|';
             words += std::to_string(data.t0 * 10);
