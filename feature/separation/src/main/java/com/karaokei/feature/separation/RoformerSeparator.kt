@@ -60,7 +60,11 @@ class RoformerSeparator @Inject constructor(
             val localPath = modelLoader.resolvePath(model).getOrThrow()
             Log.i(TAG, "RoFormer separate: opening session ${localPath} (${java.io.File(localPath).length()} bytes)")
             val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
-            val session = environment.createSession(localPath, options)
+            val session = try {
+                environment.createSession(localPath, options)
+            } finally {
+                runCatching { options.close() }
+            }
             try {
                 val expectedFrames = pickExpectedFrames(localPath)
                 val stft = Stft(windowSize = N_FFT, hopSize = HOP)
@@ -163,56 +167,60 @@ class RoformerSeparator @Inject constructor(
         val inputTensor = buildInputTensor(paddedLeft, paddedRight, expectedFrames)
         val outputs = session.run(mapOf(INPUT_NAME to inputTensor))
         inputTensor.close()
-        val outTensor = outputs[0] as? OnnxTensor
-            ?: error("roformer produced no ${OUTPUT_NAME} tensor")
-        val raw = outTensor.value as Array<*>
-        outTensor.close()
-        // Output shape [1, 2050, expectedFrames, 2] with packed index
-        // `2 * freq + channel`. Channel 0 = left, channel 1 = right.
-        val firstBatch = raw[0] as Array<Array<FloatArray>>
-        val maskLeftRe = FloatArray(expectedFrames * numBins)
-        val maskLeftIm = FloatArray(expectedFrames * numBins)
-        val maskRightRe = FloatArray(expectedFrames * numBins)
-        val maskRightIm = FloatArray(expectedFrames * numBins)
-        for (f in 0 until expectedFrames) {
-            for (k in 0 until numBins) {
-                val leftRow = firstBatch[2 * k][f]
-                val rightRow = firstBatch[2 * k + 1][f]
-                val idx = f * numBins + k
-                maskLeftRe[idx] = leftRow[0]
-                maskLeftIm[idx] = leftRow[1]
-                maskRightRe[idx] = rightRow[0]
-                maskRightIm[idx] = rightRow[1]
+        try {
+            val outTensor = outputs[0] as? OnnxTensor
+                ?: error("roformer produced no ${OUTPUT_NAME} tensor")
+            val raw = outTensor.value as Array<*>
+            outTensor.close()
+            // Output shape [1, 2050, expectedFrames, 2] with packed index
+            // `2 * freq + channel`. Channel 0 = left, channel 1 = right.
+            val firstBatch = raw[0] as Array<Array<FloatArray>>
+            val maskLeftRe = FloatArray(expectedFrames * numBins)
+            val maskLeftIm = FloatArray(expectedFrames * numBins)
+            val maskRightRe = FloatArray(expectedFrames * numBins)
+            val maskRightIm = FloatArray(expectedFrames * numBins)
+            for (f in 0 until expectedFrames) {
+                for (k in 0 until numBins) {
+                    val leftRow = firstBatch[2 * k][f]
+                    val rightRow = firstBatch[2 * k + 1][f]
+                    val idx = f * numBins + k
+                    maskLeftRe[idx] = leftRow[0]
+                    maskLeftIm[idx] = leftRow[1]
+                    maskRightRe[idx] = rightRow[0]
+                    maskRightIm[idx] = rightRow[1]
+                }
             }
-        }
-        // Apply mask: vocals_stft = mask * input_stft (complex multiply)
-        val vocalsLeftPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
-        val vocalsRightPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
-        for (f in 0 until expectedFrames) {
-            for (k in 0 until numBins) {
-                val idx = f * numBins + k
-                val re = paddedLeft[f][2 * k]
-                val im = paddedLeft[f][2 * k + 1]
-                val mr = maskLeftRe[idx]
-                val mi = maskLeftIm[idx]
-                vocalsLeftPacked[f][2 * k] = re * mr - im * mi
-                vocalsLeftPacked[f][2 * k + 1] = re * mi + im * mr
-                val re2 = paddedRight[f][2 * k]
-                val im2 = paddedRight[f][2 * k + 1]
-                val mr2 = maskRightRe[idx]
-                val mi2 = maskRightIm[idx]
-                vocalsRightPacked[f][2 * k] = re2 * mr2 - im2 * mi2
-                vocalsRightPacked[f][2 * k + 1] = re2 * mi2 + im2 * mr2
+            // Apply mask: vocals_stft = mask * input_stft (complex multiply)
+            val vocalsLeftPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
+            val vocalsRightPacked = Array(expectedFrames) { FloatArray(2 * numBins) }
+            for (f in 0 until expectedFrames) {
+                for (k in 0 until numBins) {
+                    val idx = f * numBins + k
+                    val re = paddedLeft[f][2 * k]
+                    val im = paddedLeft[f][2 * k + 1]
+                    val mr = maskLeftRe[idx]
+                    val mi = maskLeftIm[idx]
+                    vocalsLeftPacked[f][2 * k] = re * mr - im * mi
+                    vocalsLeftPacked[f][2 * k + 1] = re * mi + im * mr
+                    val re2 = paddedRight[f][2 * k]
+                    val im2 = paddedRight[f][2 * k + 1]
+                    val mr2 = maskRightRe[idx]
+                    val mi2 = maskRightIm[idx]
+                    vocalsRightPacked[f][2 * k] = re2 * mr2 - im2 * mi2
+                    vocalsRightPacked[f][2 * k + 1] = re2 * mi2 + im2 * mr2
+                }
             }
+            val vocalsLeft = stft.inverse(vocalsLeftPacked, chunkLeft.size)
+            val vocalsRight = stft.inverse(vocalsRightPacked, chunkRight.size)
+            val stereo = FloatArray(chunkLeft.size * 2)
+            for (i in chunkLeft.indices) {
+                stereo[2 * i] = vocalsLeft[i]
+                stereo[2 * i + 1] = vocalsRight[i]
+            }
+            return stereo
+        } finally {
+            outputs.close()
         }
-        val vocalsLeft = stft.inverse(vocalsLeftPacked, chunkLeft.size)
-        val vocalsRight = stft.inverse(vocalsRightPacked, chunkRight.size)
-        val stereo = FloatArray(chunkLeft.size * 2)
-        for (i in chunkLeft.indices) {
-            stereo[2 * i] = vocalsLeft[i]
-            stereo[2 * i + 1] = vocalsRight[i]
-        }
-        return stereo
     }
 
     private fun buildInputTensor(

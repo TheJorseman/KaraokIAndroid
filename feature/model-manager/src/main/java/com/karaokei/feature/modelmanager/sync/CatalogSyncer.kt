@@ -45,6 +45,12 @@ class CatalogSyncer @Inject constructor(
 
     private fun merge(existing: ModelEntity, entry: CatalogEntry): ModelEntity {
         val mapped = mapper.toEntity(entry)
+        // A checksum change means the weights were replaced upstream:
+        // the cached file (downloaded or extracted) is now stale and
+        // must not be served with the new metadata. Drop the download
+        // state so the model is re-downloaded / re-extracted.
+        val checksumChanged = existing.checksumSha256.isNotBlank() &&
+            existing.checksumSha256 != mapped.checksumSha256
         return existing.copy(
             name = mapped.name,
             tier = mapped.tier,
@@ -57,9 +63,12 @@ class CatalogSyncer @Inject constructor(
             assetPath = mapped.assetPath,
             sidecarUrl = mapped.sidecarUrl,
             sidecarPath = mapped.sidecarPath,
-            // Preserve download state and license acceptance.
-            localPath = existing.localPath,
-            downloadedAt = existing.downloadedAt,
+            tierClass = mapped.tierClass,
+            notes = mapped.notes,
+            // Preserve download state and license acceptance, unless
+            // the catalog invalidated the cached weights.
+            localPath = if (checksumChanged) null else existing.localPath,
+            downloadedAt = if (checksumChanged) null else existing.downloadedAt,
             licenseAccepted = existing.licenseAccepted || mapped.licenseAccepted,
         )
     }

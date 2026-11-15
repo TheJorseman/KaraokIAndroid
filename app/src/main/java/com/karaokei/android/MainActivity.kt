@@ -38,11 +38,13 @@ class MainActivity : ComponentActivity() {
         // to the foreground via `adb shell am start --es ...`. Without
         // this hook, intents delivered to an already-running activity
         // are silently dropped.
+        android.util.Log.i(TAG, "onNewIntent received: ${intent.extras}")
         setIntent(intent)
         handleDebugIntents(intent)
     }
 
     private fun handleDebugIntents(source: Intent?) {
+        android.util.Log.i(TAG, "handleDebugIntents: source=$source extras=${source?.extras}")
         if (source == null) return
         debugPipelineTrigger.handleFileCopy(source.getStringExtra(DebugPipelineTrigger.EXTRA_SEED_PATH))
         debugPipelineTrigger.handle(source.getStringExtra(DebugPipelineTrigger.EXTRA_SEED_URI))
@@ -54,5 +56,9 @@ class MainActivity : ComponentActivity() {
         debugPipelineTrigger.handleSetBackend(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_BACKEND))
         debugPipelineTrigger.handleSetAutoStart(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_AUTO_START))
         debugPipelineTrigger.handleSetLanguage(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_LANGUAGE))
+    }
+
+    private companion object {
+        private const val TAG = "MainActivity"
     }
 }

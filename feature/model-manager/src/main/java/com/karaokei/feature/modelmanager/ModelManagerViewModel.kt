@@ -8,6 +8,7 @@ import com.karaokei.core.data.db.entity.ModelTier
 import com.karaokei.core.data.db.entity.ModelType
 import com.karaokei.core.data.preferences.UserPreferences
 import com.karaokei.feature.modelmanager.download.ModelDownloadScheduler
+import com.karaokei.feature.modelmanager.download.ModelDownloadWorker
 import com.karaokei.feature.modelmanager.sync.CatalogSyncer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -133,9 +135,32 @@ class ModelManagerViewModel @Inject constructor(
                 emitMessage("Este modelo no tiene URL de descarga")
                 return@launch
             }
-            runCatching { downloadScheduler.enqueue(modelId, url) }
+            val workId = runCatching { downloadScheduler.enqueue(modelId, url) }
                 .onSuccess { emitMessage("Descarga iniciada. Puedes seguir usando la app.") }
                 .onFailure { emitMessage(it.message ?: "No se pudo iniciar la descarga") }
+                .getOrNull() ?: return@launch
+            // Surface terminal download states; failures used to be
+            // silent and looked like "loading errors" later in the
+            // pipeline.
+            viewModelScope.launch {
+                downloadScheduler.observe(workId)
+                    .first { it?.state?.isFinished == true }
+                    ?.let { info ->
+                        when (info.state) {
+                            androidx.work.WorkInfo.State.SUCCEEDED ->
+                                emitMessage("Descarga completada: ${model.name}")
+                            androidx.work.WorkInfo.State.FAILED ->
+                                emitMessage(
+                                    "Error en la descarga: " +
+                                        (info.outputData.getString(ModelDownloadWorker.KEY_ERROR)
+                                            ?: "falló la red o la verificación del archivo")
+                                )
+                            androidx.work.WorkInfo.State.CANCELLED ->
+                                emitMessage("Descarga cancelada")
+                            else -> Unit
+                        }
+                    }
+            }
         }
     }
 

@@ -17,11 +17,27 @@ interface ModelDao {
     @Query("SELECT * FROM models WHERE tier = :tier AND type = :type LIMIT 1")
     suspend fun findByTierAndType(tier: ModelTier, type: ModelType): ModelEntity?
 
+    /**
+     * Tier-preferred model that can actually be loaded: either bundled
+     * in the asset pack or already downloaded (`local_path` set).
+     * Rows for models that were never downloaded are excluded so the
+     * pipeline falls back to a usable model instead of failing at
+     * session open time.
+     */
+    @Query("SELECT * FROM models WHERE tier = :tier AND type = :type " +
+        "AND (is_embedded = 1 OR local_path IS NOT NULL) LIMIT 1")
+    suspend fun findUsableByTierAndType(tier: ModelTier, type: ModelType): ModelEntity?
+
     @Query("SELECT * FROM models WHERE type = :type")
     suspend fun findByType(type: ModelType): List<ModelEntity>
 
     @Query("SELECT * FROM models WHERE type = :type AND local_path IS NOT NULL ORDER BY downloaded_at DESC")
     suspend fun findDownloadedByType(type: ModelType): List<ModelEntity>
+
+    /** All models of [type] that can be loaded without downloading. */
+    @Query("SELECT * FROM models WHERE type = :type " +
+        "AND (is_embedded = 1 OR local_path IS NOT NULL) ORDER BY downloaded_at DESC")
+    suspend fun findUsableByType(type: ModelType): List<ModelEntity>
 
     @Query("SELECT * FROM models WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ModelEntity?

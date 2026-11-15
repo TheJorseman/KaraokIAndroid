@@ -28,3 +28,9 @@ dependencies {
     testRuntimeOnly(libs.junit5.jupiter.engine)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+// JUnit 5 tests need the JUnit Platform; without this the default
+// JUnit 4 runner silently executes zero tests.
+tasks.test {
+    useJUnitPlatform()
+}

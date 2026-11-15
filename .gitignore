@@ -74,6 +74,7 @@ venv/
 # scripts/models: generated artifacts
 scripts/download_cache/
 scripts/build_output/
+scripts/emulator_models/
 scripts/fixtures/calibration/
 # scripts/fixtures/test_sweep.wav is committed (small, deterministic).
 # scripts/fixtures/te_juro_que_te_amo.mp3 IS committed (real song bundled in APK).

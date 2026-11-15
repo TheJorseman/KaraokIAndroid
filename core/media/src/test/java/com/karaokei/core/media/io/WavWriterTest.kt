@@ -1,15 +1,20 @@
 package com.karaokei.core.media.io
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.io.TempDir
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.nio.file.Path
 
 class WavWriterTest {
 
-    @Test fun `round trip preserves samples`(@TempDir dir: Path) {
-        val output = File(dir.toFile(), "round.wav")
+    // JUnit 4 (the suite standard here) instead of JUnit 5's
+    // @TempDir, which is not on the test classpath.
+    @get:Rule
+    val tempFolder: TemporaryFolder = TemporaryFolder()
+
+    @Test fun `round trip preserves samples`() {
+        val output: File = tempFolder.newFile("round.wav")
         val samples = FloatArray(2048) { i -> (i.toFloat() / 2048f) * 0.5f - 0.25f }
         WavWriter.writePcm16Mono(output, samples, sampleRateHz = 16000)
         val read = WavReader.readPcm16Mono(output)

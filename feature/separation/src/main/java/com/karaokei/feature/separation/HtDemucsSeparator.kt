@@ -49,7 +49,11 @@ class HtDemucsSeparator @Inject constructor(
             val localPath = modelLoader.resolvePath(model).getOrThrow()
             Log.i(TAG, "HtDemucs separate: opening session ${localPath} (${java.io.File(localPath).length()} bytes)")
             val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
-            val session = environment.createSession(localPath, options)
+            val session = try {
+                environment.createSession(localPath, options)
+            } finally {
+                runCatching { options.close() }
+            }
             try {
                 val numStems = stemCount(session)
                 val windowSize = sampleLength(session)
@@ -84,7 +88,11 @@ class HtDemucsSeparator @Inject constructor(
                     val mixTensor = makeMixTensor(chunk, windowSize)
                     val outputs = session.run(mapOf("mix" to mixTensor))
                     mixTensor.close()
-                    val stems = readStems(outputs[0] as? OnnxTensor, numStems, windowSize)
+                    val stems = try {
+                        readStems(outputs[0] as? OnnxTensor, numStems, windowSize)
+                    } finally {
+                        outputs.close()
+                    }
                     val vocalsChunk = stems[vocalsStem]
                     for (j in 0 until chunkLen) {
                         val w = window[j]
@@ -154,13 +162,23 @@ class HtDemucsSeparator @Inject constructor(
             ?: error("htdemucs model has no outputs")
         val shape = (info.info as ai.onnxruntime.TensorInfo).shape
         check(shape.size == 4) { "htdemucs output must be 4D" }
-        return shape[1].toInt()
+        val stems = shape[1].toInt()
+        require(stems > 0) {
+            "htdemucs output stem count must be fixed; got shape=${shape.contentToString()}"
+        }
+        return stems
     }
 
     private fun sampleLength(session: OrtSession): Int {
         val info = session.inputInfo["mix"] ?: error("htdemucs model missing 'mix' input")
         val shape = (info.info as ai.onnxruntime.TensorInfo).shape
-        return shape[2].toInt()
+        val samples = shape[2].toInt()
+        // Dynamic (-1) sample dims would silently produce a -1 window
+        // and crash later in the chunking loop; fail with the cause.
+        require(samples > 0) {
+            "htdemucs input 'mix' must have a fixed sample length; got shape=${shape.contentToString()}"
+        }
+        return samples
     }
 
     private fun makeMixTensor(stereo: FloatArray, samples: Int): OnnxTensor {

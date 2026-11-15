@@ -55,8 +55,17 @@ class TranscribeSongUseCase @Inject constructor(
             ?: throw IllegalStateException("song $songId not found")
         val tier = preferences.selectedTier.first()
         val testFixture = song.fileUri.endsWith("karaokei-test-audio.wav")
-        val model = modelDao.findByTierAndType(tier, ModelType.TRANSCRIPTION)
-            ?: if (testFixture) null else throw IllegalStateException("no transcription model for tier $tier")
+        // Prefer the selected tier's model, then fall back to any
+        // usable model of the same type (embedded or downloaded with
+        // its file still on disk) instead of failing on a tier row
+        // that was never downloaded.
+        val model = (
+            listOfNotNull(modelDao.findUsableByTierAndType(tier, ModelType.TRANSCRIPTION)) +
+                modelDao.findUsableByType(ModelType.TRANSCRIPTION)
+            ).distinctBy { it.id }
+            .firstOrNull { it.isLoadable() }
+            ?: if (testFixture) null else
+                throw IllegalStateException("no hay ningún modelo de transcripción listo. Abre Modelos y descarga uno.")
 
         songDao.updateStatus(songId, SongStatus.TRANSCRIBING)
         val vocals = cacheLayout.vocalsFile(songId)
@@ -147,6 +156,18 @@ class TranscribeSongUseCase @Inject constructor(
         file.parentFile?.mkdirs()
         file.writeText(json.encodeToString(doc))
     }
+}
+
+/**
+ * Lightweight readiness probe for model selection: embedded models are
+ * always loadable (extracted on first use); downloaded models need
+ * their file to still exist on disk. `WhisperTranscriber` performs the
+ * deep validation at load time.
+ */
+private fun com.karaokei.core.data.db.entity.ModelEntity.isLoadable(): Boolean {
+    if (isEmbedded) return true
+    val path = localPath ?: return false
+    return java.io.File(path).exists()
 }
 
 private fun WhisperSegment.toTranscriptSegment(): TranscriptSegment =

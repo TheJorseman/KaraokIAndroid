@@ -1,20 +1,20 @@
 {
-  "version": 8,
-  "updated_at": "2026-09-06T18:00:00Z",
+  "version": 9,
+  "updated_at": "2026-11-15T10:00:00Z",
   "entries": [
     {
       "id": "htdemucs-ft-fast-sep",
       "name": "HTDemucs FT (Fast)",
       "tier": "FAST",
       "type": "SEPARATION",
-      "url": "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_fp16weights.onnx",
+      "url": "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_vocals_fp16weights.onnx",
       "size_bytes": 165612636,
       "checksum_sha256": "0cbe651f535415c9d26a7bb614f7d322dd5a080fa0298f2e50f478030a994dce",
       "license": "MIT",
       "embedded_in_asset_pack": false,
       "asset_path": "separation/htdemucs_ft_fp16.onnx",
       "tier_class": "htdemucs_ft",
-      "notes": "HTDemucs FT (fine-tuned) 4-stem, 165 MB. Stems: drums, bass, other, vocals. Audio a 44.1 kHz, stereo, float32. Vocals stem index = 3."
+      "notes": "HTDemucs FT (fine-tuned) vocals-only, 165 MB. Stems: vocals (single-stem export). Audio a 44.1 kHz, stereo, float32. Vocals stem index = 0."
     },
     {
       "id": "htdemucs-6s-fp16-balanced-sep",
@@ -36,8 +36,8 @@
       "tier": "HQ",
       "type": "SEPARATION",
       "url": "https://huggingface.co/musetric/vocal-separation-roformer-onnx/resolve/main/syhft_core_t1100.onnx",
-      "size_bytes": 7041719,
-      "checksum_sha256": "8b624200ac9bfc76c38fbcc9dcde3901f307acd6ee7e95b5b0a6cb3022585758",
+      "size_bytes": 10598027,
+      "checksum_sha256": "e6da40047d63ce9129c53d9c9f50b019ffae83de414e05b2800ab67fce13e374",
       "license": "MIT",
       "embedded_in_asset_pack": false,
       "asset_path": "separation/syhft_core_t1100.onnx",

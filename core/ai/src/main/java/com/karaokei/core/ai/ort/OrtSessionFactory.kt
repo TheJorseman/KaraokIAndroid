@@ -65,7 +65,14 @@ object OrtSessionFactory {
             options.setIntraOpNumThreads(2)
             options.setInterOpNumThreads(1)
             options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            options.setMemoryPatternOptimization(true)
+            // Memory-pattern optimisation allocates the arena for EVERY
+            // node output of the graph up-front (one-shot plan per input
+            // shape). For the RoFormer T=1100 graph that measured ~10 GB
+            // of RSS on the emulator before the LMKD killed the process,
+            // while the true live working set is a fraction of it.
+            // Lazy allocation + arena reuse keeps peak RSS bounded at the
+            // cost of a small per-run planning overhead.
+            options.setMemoryPatternOptimization(false)
             val backends: List<String> = when (backend) {
                 Backend.AUTO -> listOf("XNNPACK") + nnapiIfAvailable()
                 Backend.XNNPACK -> listOf("XNNPACK")

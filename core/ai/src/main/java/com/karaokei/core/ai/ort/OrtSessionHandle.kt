@@ -31,9 +31,13 @@ class OrtSessionHandle private constructor(
             val tensor = OnnxTensor.createTensor(environment, buffer, shape)
             try {
                 val outputs = session.run(mapOf(inputName to tensor))
-                @Suppress("UNCHECKED_CAST")
-                val firstOutput = outputs[0].value as Array<Array<FloatArray>>
-                firstOutput[0][0]
+                try {
+                    @Suppress("UNCHECKED_CAST")
+                    val firstOutput = outputs[0].value as Array<Array<FloatArray>>
+                    firstOutput[0][0]
+                } finally {
+                    outputs.close()
+                }
             } finally {
                 tensor.close()
             }
@@ -61,7 +65,11 @@ class OrtSessionHandle private constructor(
         fun open(modelBytes: ByteArray): AppResult<OrtSessionHandle> = runCatchingResult {
             val environment = OrtEnvironment.getEnvironment()
             val options = OrtSessionFactory.createSessionOptions(environment).getOrThrow()
-            val session = environment.createSession(modelBytes, options)
+            val session = try {
+                environment.createSession(modelBytes, options)
+            } finally {
+                runCatching { options.close() } // SessionOptions is Closeable; don't leak it
+            }
             OrtSessionHandle(session, environment)
         }.let { result ->
             when (result) {
@@ -77,7 +85,11 @@ class OrtSessionHandle private constructor(
         fun openFile(modelPath: String, backend: OrtSessionFactory.Backend): AppResult<OrtSessionHandle> = runCatchingResult {
             val environment = OrtEnvironment.getEnvironment()
             val options = OrtSessionFactory.createSessionOptions(environment, backend).getOrThrow()
-            val session = environment.createSession(modelPath, options)
+            val session = try {
+                environment.createSession(modelPath, options)
+            } finally {
+                runCatching { options.close() } // SessionOptions is Closeable; don't leak it
+            }
             android.util.Log.i("OrtSessionHandle", "session opened with backend=$backend (requested)")
             OrtSessionHandle(session, environment)
         }.let { result ->

@@ -53,6 +53,7 @@ class SeparateSongUseCase @Inject constructor(
     private val cacheDao: ProcessingCacheDao,
     private val cacheLayout: SongCacheLayout,
     private val extractor: AudioExtractor,
+    private val modelLoader: com.karaokei.core.ai.model.ModelLoader,
     private val mdxNet: MdxNetSeparator,
     private val htDemucs: HtDemucsSeparator,
     private val roformer: RoformerSeparator,
@@ -92,18 +93,7 @@ class SeparateSongUseCase @Inject constructor(
         }
 
         val tier = preferences.selectedTier.first()
-        val model = modelDao.findByTierAndType(tier, ModelType.SEPARATION) ?: run {
-            val downloaded = modelDao.findDownloadedByType(ModelType.SEPARATION).firstOrNull()
-            if (downloaded != null) {
-                Log.w(TAG, "Tier $tier has no local separation model; using downloaded ${downloaded.id}")
-                downloaded
-            } else {
-                songDao.updateStatus(songId, SongStatus.ERROR)
-                throw IllegalStateException(
-                    "no separation model available. Abre Modelos y descarga el tier ${tier.name} antes de procesar."
-                )
-            }
-        }
+        val model = pickSeparationModel(tier, songId)
 
         val result = when (separatorFor(model)) {
             Separator.MDX_NET -> mdxNetSeparation(samples, model)
@@ -132,6 +122,34 @@ class SeparateSongUseCase @Inject constructor(
     }
 
     private enum class Separator { MDX_NET, HTDEMUCS, ROFORMER, UNKNOWN }
+
+    /**
+     * Picks a separation model that is actually loadable: the
+     * selected tier first, then any other usable model of the same
+     * type (embedded or downloaded with its file still on disk).
+     * A tier row whose file is missing or was never downloaded is
+     * skipped instead of failing at session-open time.
+     */
+    private suspend fun pickSeparationModel(
+        tier: com.karaokei.core.data.db.entity.ModelTier,
+        songId: String,
+    ): ModelEntity {
+        val candidates = (
+            listOfNotNull(modelDao.findUsableByTierAndType(tier, ModelType.SEPARATION)) +
+                modelDao.findUsableByType(ModelType.SEPARATION)
+            ).distinctBy { it.id }
+        val model = candidates.firstOrNull { modelLoader.isReady(it) }
+        if (model == null) {
+            songDao.updateStatus(songId, SongStatus.ERROR)
+            throw IllegalStateException(
+                "no separation model available. Abre Modelos y descarga el tier ${tier.name} antes de procesar."
+            )
+        }
+        if (model.tier != tier) {
+            Log.w(TAG, "Tier $tier has no usable separation model; falling back to ${model.id}")
+        }
+        return model
+    }
 
     private fun separatorFor(model: ModelEntity): Separator {
         val tierClass = model.tierClass.orEmpty().lowercase()

@@ -118,23 +118,58 @@ class WhisperTranscriber @Inject constructor(
 
     /**
      * The Asset Pack ships models in `assets/...`; the native code
-     * needs a real file path. The simplest portable approach is to
-     * copy the bytes into the per-app filesDir on first use and reuse
-     * the cached copy thereafter. The cache is invalidated only when
-     * the model entity's `checksum_sha256` changes.
+     * needs a real file path. The bytes are copied into the per-app
+     * filesDir on first use (atomically, via a `.part` temp file) and
+     * reused afterwards. The cache is shared with
+     * `com.karaokei.core.ai.model.ModelLoader`, which extracts to the
+     * same `models/transcription/<file>` layout, so the model is not
+     * stored twice on disk.
      */
     private fun resolveModelPath(model: ModelEntity): String? {
         if (!model.isEmbedded) {
-            return model.localPath
+            val localPath = model.localPath
+                ?: throw IllegalStateException(
+                    "model ${model.id} no tiene ruta local; descárgalo desde la pantalla de Modelos"
+                )
+            val file = File(localPath)
+            if (!file.exists() || file.length() == 0L) {
+                throw IllegalStateException(
+                    "model ${model.id}: el archivo no existe en $localPath; " +
+                        "vuelve a descargarlo desde la pantalla de Modelos"
+                )
+            }
+            return localPath
         }
-        val target = File(context.filesDir, "models/${model.id}.bin")
-        if (target.exists() && target.length() == model.sizeBytes) {
-            return target.absolutePath
-        }
-        target.parentFile?.mkdirs()
         val assetPath = inferAssetPath(model)
-        context.assets.open(assetPath).use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
+        val target = File(context.filesDir, "models/transcription/${assetPath.substringAfterLast('/')}")
+        val usable = target.exists() &&
+            target.length() > 0L &&
+            (model.sizeBytes <= 0L || target.length() == model.sizeBytes)
+        if (usable) return target.absolutePath
+
+        // Migrate the legacy cache location (`models/<id>.bin`) so an
+        // update does not force a fresh 32 MB asset copy.
+        val legacy = File(context.filesDir, "models/${model.id}.bin")
+        if (legacy.exists() && legacy.length() > 0L &&
+            (model.sizeBytes <= 0L || legacy.length() == model.sizeBytes)
+        ) {
+            target.parentFile?.mkdirs()
+            if (legacy.renameTo(target)) return target.absolutePath
+        }
+
+        target.parentFile?.mkdirs()
+        val tmp = File(target.parentFile, target.name + ".part")
+        try {
+            context.assets.open(assetPath).use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output) }
+            }
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                throw IllegalStateException("failed to move ${tmp.name} into place at ${target.absolutePath}")
+            }
+        } catch (t: Throwable) {
+            tmp.delete()
+            throw t
         }
         return target.absolutePath
     }

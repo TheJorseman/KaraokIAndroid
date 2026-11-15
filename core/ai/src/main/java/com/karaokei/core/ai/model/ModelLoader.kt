@@ -5,6 +5,7 @@ import com.karaokei.core.common.hash.Sha256
 import com.karaokei.core.common.io.Streams
 import com.karaokei.core.common.result.AppError
 import com.karaokei.core.common.result.AppResult
+import com.karaokei.core.common.result.getOrThrow
 import com.karaokei.core.common.result.runCatchingResult
 import com.karaokei.core.data.db.entity.ModelEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -42,15 +43,35 @@ class ModelLoader @Inject constructor(
      * from the asset pack if needed. The caller MUST release the
      * reference once the ORT session is closed; the file remains on
      * disk for subsequent launches.
+     *
+     * A `localPath` is only trusted when the file actually exists on
+     * disk; otherwise the row is stale — the file was deleted or a
+     * copy was interrupted — and we fall back to extraction (embedded
+     * models) or fail with an actionable message instead of letting
+     * ORT throw a cryptic "failed to open ORT model file".
      */
     fun resolvePath(model: ModelEntity): AppResult<String> = runCatchingResult {
-        when {
-            !model.localPath.isNullOrBlank() -> model.localPath!!
-            model.isEmbedded -> ensureExtracted(model)
-            else -> throw IllegalStateException(
-                "model ${model.id} is not downloaded and is not embedded"
+        val localPath = model.localPath
+        if (!localPath.isNullOrBlank()) {
+            if (isUsableFile(File(localPath), model, enforceSize = false)) {
+                ensureSidecarPresent(model, File(localPath))
+                return@runCatchingResult localPath
+            }
+            if (model.isEmbedded) {
+                // Stale/missing extracted or seeded copy: re-extract.
+                return@runCatchingResult ensureExtracted(model)
+            }
+            throw IllegalStateException(
+                "model ${model.id}: el archivo no existe o está incompleto en $localPath; " +
+                    "vuelve a descargarlo desde la pantalla de Modelos"
             )
         }
+        if (model.isEmbedded) {
+            return@runCatchingResult ensureExtracted(model)
+        }
+        throw IllegalStateException(
+            "model ${model.id} is not downloaded and is not embedded"
+        )
     }.let { result ->
         when (result) {
             is AppResult.Success -> result
@@ -66,14 +87,8 @@ class ModelLoader @Inject constructor(
      * load the graph from disk.
      */
     fun loadBytes(model: ModelEntity): AppResult<ByteArray> = runCatchingResult {
-        if (model.isEmbedded && model.localPath.isNullOrBlank()) {
-            val path = ensureExtracted(model)
-            File(path).readBytes()
-        } else {
-            val path = model.localPath
-                ?: throw IllegalStateException("model ${model.id} has no local_path")
-            File(path).readBytes()
-        }
+        val path = resolvePath(model).getOrThrow()
+        File(path).readBytes()
     }.let { result ->
         when (result) {
             is AppResult.Success -> result
@@ -84,43 +99,107 @@ class ModelLoader @Inject constructor(
     }
 
     /**
+     * Cheap readiness probe used by callers that must pick a model
+     * before opening a session. True when the model can be resolved
+     * without hitting the network: the file is present and intact, or
+     * the model ships in the asset pack.
+     */
+    fun isReady(model: ModelEntity): Boolean = runCatching {
+        val localPath = model.localPath
+        if (!localPath.isNullOrBlank()) {
+            val graph = File(localPath)
+            return isUsableFile(graph, model, enforceSize = false) && sidecarSatisfied(model, graph)
+        }
+        model.isEmbedded
+    }.getOrDefault(false)
+
+    /**
      * Local-path resolver kept for tests and external-data flows.
-     * Returns the cached file path if it exists, otherwise `null`.
+     * Returns the cached file path if it is usable, otherwise `null`.
      */
     fun resolveLocalPath(model: ModelEntity): String? {
-        if (model.isEmbedded) {
-            val path = extractedPath(model)
-            val sidecar = File("$path.data")
-            return path.takeIf { File(it).exists() && sidecar.exists() }
-        }
-        val path = model.localPath ?: return null
+        val enforceSize = model.isEmbedded
+        val path = if (model.isEmbedded) extractedPath(model) else model.localPath ?: return null
         val graph = File(path)
-        val sidecar = File("$path.data")
-        return path.takeIf { graph.exists() && sidecar.exists() }
+        return path.takeIf { isUsableFile(graph, model, enforceSize) && sidecarSatisfied(model, graph) }
+    }
+
+    /**
+     * Validates a cached model file: it must exist and be non-empty.
+     * For files we extracted ourselves ([enforceSize] = true, embedded
+     * assets) the catalog size must also match — that catches
+     * interrupted legacy copies that pass the naive `exists()` test
+     * and then fail deep inside ORT. Downloaded files are trusted by
+     * existence alone: their SHA-256 was verified at download time and
+     * re-checking `size_bytes` here could brick a model (and loop
+     * forever) if the catalog ever ships a stale size.
+     */
+    private fun isUsableFile(file: File, model: ModelEntity, enforceSize: Boolean): Boolean {
+        if (!file.exists() || file.length() == 0L) return false
+        if (!enforceSize || model.sizeBytes <= 0L) return true
+        return file.length() == model.sizeBytes
+    }
+
+    /**
+     * ONNX external-data sidecars are resolved by the *declared file
+     * name* (e.g. `syhft_core_t1100.onnx.data`) relative to the graph
+     * directory, not as `<graph>.data`. The sidecar is required only
+     * when the catalog declares one.
+     */
+    private fun sidecarFile(model: ModelEntity, graph: File): File? {
+        val sidecarName = model.sidecarPath?.takeIf { it.isNotBlank() } ?: return null
+        return File(graph.parentFile, sidecarName.substringAfterLast('/'))
+    }
+
+    private fun sidecarSatisfied(model: ModelEntity, graph: File): Boolean {
+        val sidecar = sidecarFile(model, graph) ?: return true
+        return sidecar.exists() && sidecar.length() > 0
+    }
+
+    private fun ensureSidecarPresent(model: ModelEntity, graph: File) {
+        val sidecar = sidecarFile(model, graph) ?: return
+        if (!sidecar.exists() || sidecar.length() == 0L) {
+            throw IllegalStateException(
+                "model ${model.id}: falta el archivo externo ${sidecar.name} junto a ${graph.absolutePath}; " +
+                    "vuelve a descargarlo desde la pantalla de Modelos"
+            )
+        }
     }
 
     private fun ensureExtracted(model: ModelEntity): String {
         val target = extractedPath(model)
         val graph = File(target)
-        val sidecarName = model.sidecarPath ?: sidecarAssetName(model)
-        val sidecar = if (sidecarName != null) File("$target.data") else null
-        if (graph.exists() && (sidecar == null || sidecar.exists())) {
+        val sidecar = sidecarFile(model, graph)
+        if (isUsableFile(graph, model, enforceSize = true) && sidecarSatisfied(model, graph)) {
             return target
         }
         graph.parentFile?.mkdirs()
-        context.assets.open(assetName(model)).use { input ->
-            graph.outputStream().use { output ->
-                Streams.copy(input, output)
-            }
-        }
-        if (sidecar != null && sidecarName != null) {
-            context.assets.open(sidecarName).use { input ->
-                sidecar.outputStream().use { output ->
+        copyAssetAtomic(assetName(model), graph)
+        sidecar?.let { copyAssetAtomic(model.sidecarPath!!, it) }
+        return target
+    }
+
+    /**
+     * Copy an asset to [target] through a `.part` temp file and a
+     * rename, so a process kill mid-copy never leaves a truncated
+     * model that would pass the `exists()` check.
+     */
+    private fun copyAssetAtomic(assetPath: String, target: File) {
+        val tmp = File(target.parentFile, target.name + ".part")
+        try {
+            context.assets.open(assetPath).use { input ->
+                tmp.outputStream().use { output ->
                     Streams.copy(input, output)
                 }
             }
+            if (target.exists()) target.delete()
+            if (!tmp.renameTo(target)) {
+                throw IllegalStateException("failed to move ${tmp.name} into place at ${target.absolutePath}")
+            }
+        } catch (t: Throwable) {
+            tmp.delete()
+            throw t
         }
-        return target
     }
 
     private fun extractedPath(model: ModelEntity): String {
@@ -133,20 +212,6 @@ class ModelLoader @Inject constructor(
     }
 
     private fun assetName(model: ModelEntity): String = inferAssetPath(model)
-
-    /**
-     * Sidecar name for a model, when its graph references an external
-     * data file. Currently only the RoFormer graph carries one; for
-     * everything else this returns `null` and the caller skips the
-     * sidecar copy. We require the catalog to explicitly declare a
-     * `sidecar_path` — assuming `<assetPath>.data` exists would break
-     * models that don't carry a sidecar (MDX-Net, the synthetic Kim
-     * UNet, …) and throw at `assets.open`.
-     */
-    private fun sidecarAssetName(model: ModelEntity): String? {
-        val explicit = model.sidecarPath?.takeIf { it.isNotBlank() } ?: return null
-        return explicit
-    }
 
     /**
      * Convention: the asset path is `separation/<file>.onnx` for

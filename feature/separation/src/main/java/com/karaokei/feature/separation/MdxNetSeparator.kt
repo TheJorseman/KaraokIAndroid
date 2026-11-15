@@ -208,35 +208,41 @@ class MdxNetSeparator @Inject constructor(
                 floatBuffer,
                 longArrayOf(1, 4, EXPECTED_BINS.toLong(), MDX_FRAMES_PER_CHUNK.toLong()),
             )
-            val outputs = session.session.run(mapOf(MDX_INPUT_NAME to tensor))
-            tensor.close()
-            val resultTensor = outputs[0] as? OnnxTensor
-                ?: error("mdx-net produced no output tensor")
-            val raw = resultTensor.value as Array<*>
-            val batch = raw[0] as Array<*>
-            // Output shape `[batch, 4, EXPECTED_BINS, MDX_FRAMES_PER_CHUNK]`.
-            val channelReal = batch[0] as Array<*>
-            val channelImag = batch[1] as Array<*>
-            for (f in 0 until actualFrames) {
-                val globalFrame = subStart + f
-                for (k in 0 until EXPECTED_BINS) {
-                    val re = (channelReal[k] as FloatArray)[f]
-                    val im = (channelImag[k] as FloatArray)[f]
-                    vocalsSpec[globalFrame][2 * k] = re
-                    vocalsSpec[globalFrame][2 * k + 1] = im
-                }
+            val outputs = try {
+                session.session.run(mapOf(MDX_INPUT_NAME to tensor))
+            } finally {
+                tensor.close()
             }
-            // Pad bins 2048..numBins-1 with zeros so the iSTFT
-            // mirror loop sees matching (real, imag) pairs in the
-            // conjugate bin range.
-            for (f in 0 until actualFrames) {
-                val globalFrame = subStart + f
-                for (k in EXPECTED_BINS until mixSpec[globalFrame].size / 2) {
-                    vocalsSpec[globalFrame][2 * k] = 0f
-                    vocalsSpec[globalFrame][2 * k + 1] = 0f
+            try {
+                val resultTensor = outputs[0] as? OnnxTensor
+                    ?: error("mdx-net produced no output tensor")
+                val raw = resultTensor.value as Array<*>
+                val batch = raw[0] as Array<*>
+                // Output shape `[batch, 4, EXPECTED_BINS, MDX_FRAMES_PER_CHUNK]`.
+                val channelReal = batch[0] as Array<*>
+                val channelImag = batch[1] as Array<*>
+                for (f in 0 until actualFrames) {
+                    val globalFrame = subStart + f
+                    for (k in 0 until EXPECTED_BINS) {
+                        val re = (channelReal[k] as FloatArray)[f]
+                        val im = (channelImag[k] as FloatArray)[f]
+                        vocalsSpec[globalFrame][2 * k] = re
+                        vocalsSpec[globalFrame][2 * k + 1] = im
+                    }
                 }
+                // Pad bins 2048..numBins-1 with zeros so the iSTFT
+                // mirror loop sees matching (real, imag) pairs in the
+                // conjugate bin range.
+                for (f in 0 until actualFrames) {
+                    val globalFrame = subStart + f
+                    for (k in EXPECTED_BINS until mixSpec[globalFrame].size / 2) {
+                        vocalsSpec[globalFrame][2 * k] = 0f
+                        vocalsSpec[globalFrame][2 * k + 1] = 0f
+                    }
+                }
+            } finally {
+                outputs.close()
             }
-            outputs.close()
         }
         return vocalsSpec
     }
