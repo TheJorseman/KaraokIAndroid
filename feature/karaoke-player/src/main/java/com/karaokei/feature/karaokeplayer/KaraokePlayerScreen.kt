@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -22,7 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -65,6 +68,8 @@ fun KaraokePlayerScreen(
         engine?.setOffsetMs(state.lyricsOffsetMs)
     }
 
+    var showEditDialog by remember { mutableStateOf(false) }
+
     KaraokeStageBackground {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
@@ -89,12 +94,28 @@ fun KaraokePlayerScreen(
                     durationMs = state.durationMs,
                     isPlaying = state.isPlaying,
                     lyricsOffsetMs = state.lyricsOffsetMs,
+                    editEnabled = engineState is com.karaokei.feature.karaoke.engine.KaraokeState.Active,
+                    onEditLine = { showEditDialog = true },
                     onSeek = { viewModel.seekTo(it) },
                     onTogglePlayPause = { viewModel.togglePlayPause() },
                     onNudgeOffset = { deltaMs -> viewModel.nudgeLyricsOffset(deltaMs) },
                 )
             }
         }
+    }
+
+    if (showEditDialog) {
+        val active = engineState as? com.karaokei.feature.karaoke.engine.KaraokeState.Active
+        EditLineDialog(
+            initialText = active?.line?.words?.joinToString(" ") { it.text } ?: "",
+            onConfirm = { text ->
+                active?.let {
+                    viewModel.editLine(songId, it.lineIndex, text)
+                }
+                showEditDialog = false
+            },
+            onDismiss = { showEditDialog = false },
+        )
     }
 }
 
@@ -155,6 +176,8 @@ private fun PlayerControls(
     onSeek: (Long) -> Unit,
     onTogglePlayPause: () -> Unit,
     onNudgeOffset: (Int) -> Unit,
+    editEnabled: Boolean,
+    onEditLine: () -> Unit,
 ) {
     val safeDuration = if (durationMs <= 0L) 1L else durationMs
     Column(
@@ -190,13 +213,20 @@ private fun PlayerControls(
                 style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
             )
         }
-        OffsetRow(lyricsOffsetMs = lyricsOffsetMs, onNudgeOffset = onNudgeOffset)
+        OffsetRow(
+            lyricsOffsetMs = lyricsOffsetMs,
+            editEnabled = editEnabled,
+            onEditLine = onEditLine,
+            onNudgeOffset = onNudgeOffset,
+        )
     }
 }
 
 @Composable
 private fun OffsetRow(
     lyricsOffsetMs: Int,
+    editEnabled: Boolean,
+    onEditLine: () -> Unit,
     onNudgeOffset: (Int) -> Unit,
 ) {
     val seconds = lyricsOffsetMs / 1000.0
@@ -208,6 +238,17 @@ private fun OffsetRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(text = "Letras", color = Color.White.copy(alpha = 0.7f))
+        IconButton(
+            onClick = onEditLine,
+            enabled = editEnabled,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Edit,
+                contentDescription = "Editar la línea actual",
+                tint = if (editEnabled) Color.White else Color.White.copy(alpha = 0.3f),
+            )
+        }
         IconButton(
             onClick = { onNudgeOffset(-100) },
             modifier = Modifier.size(40.dp),

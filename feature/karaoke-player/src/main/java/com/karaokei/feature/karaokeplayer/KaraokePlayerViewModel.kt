@@ -140,6 +140,57 @@ class KaraokePlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Replace the text of one lyric line, keeping its timing span: the
+     * new words are spread across the old start/end proportionally to
+     * their length. The document is hot-swapped so playback keeps its
+     * position — the user fixes ASR-garbled words without losing their
+     * place in the song.
+     */
+    fun editLine(songId: String, lineIndex: Int, newText: String) {
+        viewModelScope.launch {
+            val updated = withContext(Dispatchers.IO) {
+                val karaokeFile = cacheLayout.karaokeFile(songId)
+                if (!karaokeFile.exists()) return@withContext null
+                val doc = json.decodeFromString(KaraokeDocument.serializer(), karaokeFile.readText())
+                val line = doc.lines.getOrNull(lineIndex) ?: return@withContext null
+                val edited = redistributeWords(line, newText)
+                val newDoc = doc.copy(
+                    lines = doc.lines.toMutableList().also { it[lineIndex] = edited },
+                )
+                karaokeFile.writeText(json.encodeToString(KaraokeDocument.serializer(), newDoc))
+                newDoc
+            } ?: return@launch
+            val position = _state.value.positionMs
+            engine = KaraokeEngine(updated, initialOffsetMs = lyricsOffsetMs.value)
+            engine?.onTick(position)
+            _state.update { it.copy(karaoke = updated) }
+        }
+    }
+
+    private fun redistributeWords(
+        line: com.karaokei.feature.karaoke.engine.KaraokeLine,
+        newText: String,
+    ): com.karaokei.feature.karaoke.engine.KaraokeLine {
+        val tokens = newText.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return line
+        val totalChars = tokens.sumOf { it.length }.coerceAtLeast(1)
+        val span = (line.end - line.start).coerceAtLeast(0.0)
+        var t = line.start
+        val words = tokens.map { token ->
+            val width = span * token.length / totalChars
+            val word = com.karaokei.feature.karaoke.engine.KaraokeWord(
+                text = token,
+                start = t,
+                end = t + width,
+                confidence = 1f,
+            )
+            t += width
+            word
+        }
+        return line.copy(start = line.start, end = line.end, words = words)
+    }
+
     override fun onCleared() {
         super.onCleared()
         player.pause()

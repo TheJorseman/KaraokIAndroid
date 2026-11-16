@@ -22,24 +22,35 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // The dev keystore is intentionally not tracked in git: developers
+    // and CI either drop one at app/dev.keystore or restore it from the
+    // KEYSTORE_BASE64 secret. When it is absent, debug builds fall back
+    // to the default debug keystore and release builds stay unsigned.
+    val devKeystoreExists = file("dev.keystore").exists()
     signingConfigs {
-        create("dev") {
-            storeFile = file("dev.keystore")
-            storePassword = "devpass"
-            keyAlias = "dev"
-            keyPassword = "devpass"
+        if (devKeystoreExists) {
+            create("dev") {
+                storeFile = file("dev.keystore")
+                storePassword = "devpass"
+                keyAlias = "dev"
+                keyPassword = "devpass"
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("dev")
+            signingConfig = if (devKeystoreExists) {
+                signingConfigs.getByName("dev")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
         }
         release {
-            signingConfig = signingConfigs.getByName("dev")
+            signingConfig = if (devKeystoreExists) signingConfigs.getByName("dev") else null
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
