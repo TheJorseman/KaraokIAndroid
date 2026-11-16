@@ -52,26 +52,27 @@ class ModelLoader @Inject constructor(
      */
     fun resolvePath(model: ModelEntity): AppResult<String> = runCatchingResult {
         val localPath = model.localPath
-        if (!localPath.isNullOrBlank()) {
+        val resolved: String = if (!localPath.isNullOrBlank()) {
             if (isUsableFile(File(localPath), model, enforceSize = false)) {
                 ensureSidecarPresent(model, File(localPath))
-                return@runCatchingResult localPath
-            }
-            if (model.isEmbedded) {
+                localPath
+            } else if (model.isEmbedded) {
                 // Stale/missing extracted or seeded copy: re-extract.
-                return@runCatchingResult ensureExtracted(model)
+                ensureExtracted(model)
+            } else {
+                throw IllegalStateException(
+                    "model ${model.id}: el archivo no existe o está incompleto en $localPath; " +
+                        "vuelve a descargarlo desde la pantalla de Modelos"
+                )
             }
+        } else if (model.isEmbedded) {
+            ensureExtracted(model)
+        } else {
             throw IllegalStateException(
-                "model ${model.id}: el archivo no existe o está incompleto en $localPath; " +
-                    "vuelve a descargarlo desde la pantalla de Modelos"
+                "model ${model.id} is not downloaded and is not embedded"
             )
         }
-        if (model.isEmbedded) {
-            return@runCatchingResult ensureExtracted(model)
-        }
-        throw IllegalStateException(
-            "model ${model.id} is not downloaded and is not embedded"
-        )
+        upcastForArm64(resolved)
     }.let { result ->
         when (result) {
             is AppResult.Success -> result
@@ -122,6 +123,34 @@ class ModelLoader @Inject constructor(
         val path = if (model.isEmbedded) extractedPath(model) else model.localPath ?: return null
         val graph = File(path)
         return path.takeIf { isUsableFile(graph, model, enforceSize) && sidecarSatisfied(model, graph) }
+    }
+
+    /**
+     * On ARM64 devices ORT produces corrupted inference output for
+     * graphs with FLOAT16 initializers (measured with HTDemucs FT:
+     * outputs uncorrelated with the correct x86 results). Rewrite
+     * those initializers to FLOAT32 once and cache the result next to
+     * the original model; the two are semantically identical. On other
+     * ABIs the original model is used as-is.
+     */
+    private fun upcastForArm64(path: String): String {
+        val file = File(path)
+        if (!file.name.endsWith(".onnx")) return path
+        if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) return path
+        val out = File(file.parentFile, file.name.replace(Regex("\\.onnx$"), ".fp32.onnx"))
+        if (out.exists() && out.length() > 0) return out.absolutePath
+        return try {
+            val converted = OnnxFp32Upcast.upcast(file, out)
+            android.util.Log.i(
+                "ModelLoader",
+                "upcast $converted fp16 initializers to fp32 -> ${out.name} (${out.length()} bytes)",
+            )
+            out.absolutePath
+        } catch (t: Throwable) {
+            android.util.Log.w("ModelLoader", "fp32 upcast failed (${t.message}); using original model")
+            out.delete()
+            path
+        }
     }
 
     /**

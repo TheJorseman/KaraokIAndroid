@@ -19,16 +19,19 @@ import java.util.EnumSet
  *  - `CPU`     — Vanilla CPU execution. The slowest but most
  *                portable; useful for diagnostic baselines.
  *
- * The active backend is set by [activeBackend] (default: AUTO, which
- * registers NNAPI first and falls back to XNNPACK/CPU for whatever the
- * NPU cannot take). Benchmarked on a Snapdragon 8 Gen 3 (SM8650) with
- * HTDemucs FT: NNAPI 26.6 s vs XNNPACK 30.4 s vs CPU 32.5 s for the
- * same 30 s clip at 6 intra-op threads, with identical output quality
- * (vocals/source RMS ratio 0.25–0.32, no NaN). Devices whose NNAPI HAL
- * is missing or slow fall through to the CPU EP automatically; the
- * user can override the choice at runtime via
+ * The active backend is set by [activeBackend] (default: CPU).
+ *
+ * Quality warning — do NOT switch the default to NNAPI/XNNPACK
+ * without re-running the full-song separation quality check. Benchmarks
+ * on a Snapdragon 8 Gen 3 (SM8650) measured NNAPI ~20% faster than CPU
+ * (26.6 s vs 32.5 s per 30 s of HTDemucs FT), but the NNAPI output is
+ * acoustically degraded: the vocal estimate is attenuated (RMS 0.049 vs
+ * 0.068 on the same song), which leaves audible vocals in
+ * `instrumental.wav` (= mix − vocals) and makes Whisper hallucinate on
+ * the distorted vocals. CPU produces clean vocals and correct
+ * transcripts. The user can override at runtime via
  * `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
- * "XNNPACK" | "AUTO")`.
+ * "XNNPACK" | "AUTO" | "QNN")`.
  *
  * QNN (Qualcomm NPU) is documented as a post-MVP item — see
  * `docs/post-mvp.md`. The Qualcomm AI Engine SDK is required and
@@ -45,7 +48,7 @@ object OrtSessionFactory {
         QNN,     // Qualcomm QNN plugin EP (Hexagon NPU via libQnnHtp.so)
     }
 
-    @Volatile var activeBackend: Backend = Backend.AUTO
+    @Volatile var activeBackend: Backend = Backend.CPU
 
     // ------------------------------------------------------------------
     // QNN (Qualcomm Hexagon NPU). The ORT build with the QNN EP ships
@@ -56,12 +59,10 @@ object OrtSessionFactory {
     // ------------------------------------------------------------------
 
     /**
-     * HTP architecture for the current SoC (SM8650 = HTP v75). The
-     * numeric arch is the documented, portable identifier; letting the
-     * stack guess has produced `QNN_DEVICE_ERROR_INVALID_CONFIG` at
-     * device creation on SM8650.
+     * HTP architecture for the current SoC (kept for when the QNN EP
+     * is compiled in; SM8650 = HTP v75).
      */
-    private fun qnnHtpArch(): String {
+    internal fun qnnHtpArch(): String {
         val soc = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             android.os.Build.SOC_MODEL.orEmpty()
         } else {
@@ -77,24 +78,19 @@ object OrtSessionFactory {
         }
     }
 
+    /**
+     * The QNN EP is not compiled into the standard ORT build and the
+     * -qnn AAR variant produced degraded separation output on real
+     * devices (see the class docs). Kept as an explicit option so a
+     * future build can wire it without touching callers; it falls
+     * back to the CPU EP with a clear log.
+     */
     private fun addQnnProvider(options: OrtSession.SessionOptions): Boolean {
-        return try {
-            options.addQnn(
-                mapOf(
-                    "backend_type" to "htp",
-                    "htp_performance_mode" to "burst",
-                    "htp_arch" to qnnHtpArch(),
-                ),
-            )
-            android.util.Log.i("OrtSessionFactory", "QNN HTP backend attached (arch=${qnnHtpArch()})")
-            true
-        } catch (t: Throwable) {
-            android.util.Log.w(
-                "OrtSessionFactory",
-                "QNN backend unavailable (${t.message}); falling back to CPU EP",
-            )
-            false
-        }
+        android.util.Log.w(
+            "OrtSessionFactory",
+            "QNN backend not available in this build; falling back to CPU EP",
+        )
+        return false
     }
 
     /**

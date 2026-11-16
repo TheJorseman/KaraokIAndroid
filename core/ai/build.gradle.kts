@@ -22,11 +22,13 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
 
-    // ONNX Runtime with the QNN EP compiled in (drop-in superset of
-    // onnxruntime-android; exposes SessionOptions.addQnn()). The QNN
-    // backend runtime ships the Hexagon libs and is optional at
-    // runtime — without it addQnn() falls back to the CPU EP.
-    api(libs.onnxruntime.android.qnn)
+    // ONNX Runtime (standard build). NOTE: the -qnn AAR variant was
+    // measured producing degraded HTDemucs output on a Galaxy S24
+    // Ultra (attenuated vocals -> vocal leakage in the instrumental),
+    // so the stock build is used even though it lacks addQnn().
+    api(libs.onnxruntime.android)
+    // QNN backend runtime (Hexagon libs). Kept for experimentation;
+    // the QNN backend option falls back to CPU when the EP is absent.
     api(libs.qnn.runtime)
 
     // Hilt

@@ -147,7 +147,7 @@ dependencies {
     // en docs/post-mvp.md. Los extractores nativos cubren los formatos MVP.
 
     // ONNX Runtime (T3.1)
-    implementation(libs.onnxruntime.android.qnn)
+    implementation(libs.onnxruntime.android)
 
     // Desugaring
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)

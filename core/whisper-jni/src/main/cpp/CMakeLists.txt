@@ -14,12 +14,19 @@ set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-# The optimized FP32 SGEMM (llamafile, with NEON kernels) is disabled by
-# default; the whisper encoder is FP32 GEMM-bound and falls back to a
-# much slower scalar path without it. Keep OpenMP enabled: llamafile is
-# known to deadlock against the native threadpool on some ARM devices.
-set(GGML_OPENMP ON CACHE BOOL "" FORCE)
-set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
+# The whisper encoder is FP32 GEMM-bound. On x86_64 the optimized
+# llamafile SGEMM works, but the ARM64 build has produced corrupted
+# encoder output on real devices (uniform hallucinations from correct
+# model + audio), so ARM64 uses the conservative vanilla ggml config:
+# no llamafile, no OpenMP, baseline NEON. See the whisper quality
+# tests before re-enabling any of these.
+if(ANDROID_ABI STREQUAL "arm64-v8a")
+    set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+    set(GGML_LLAMAFILE OFF CACHE BOOL "" FORCE)
+else()
+    set(GGML_OPENMP ON CACHE BOOL "" FORCE)
+    set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
+endif()
 
 # Android 15+ requires native libraries to be aligned to 16 KB pages.
 # The flag only makes sense at link time, not when the static
@@ -32,13 +39,11 @@ if(NOT EXISTS "${WHISPER_ROOT}/CMakeLists.txt")
     message(FATAL_ERROR "Missing vendored whisper.cpp at ${WHISPER_ROOT}")
 endif()
 
-# ARM64 Android defaults to armv8-a (NEON only, no DOTPROD), which makes
-# Q5_1 quantization fall back to the slow NEON path. Enable the
-# armv8.2-a dot-product extension so the fast DOTPROD kernels are used
-# on all modern devices.
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod" CACHE STRING "ggml: CPU architecture for ARM" FORCE)
-endif()
+# ARM64 Android defaults to armv8-a (NEON only). The armv8.2-a
+# dot-product extension speeds up Q5_1 GEMM, but it is a suspect in
+# corrupted encoder output on devices; keep the baseline NEON kernels
+# until the quality tests pass with dotprod re-enabled.
+# (dotprod intentionally not set for arm64-v8a)
 
 add_subdirectory("${WHISPER_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/whisper.cpp" EXCLUDE_FROM_ALL)
 
