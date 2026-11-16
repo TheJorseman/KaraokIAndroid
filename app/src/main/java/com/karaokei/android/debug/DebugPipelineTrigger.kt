@@ -216,6 +216,17 @@ class DebugPipelineTrigger @Inject constructor(
     }
 
     /**
+     * Override the ORT intra-op thread count. Pass an integer ("2",
+     * "4", "6", …) to benchmark thread scaling on a given device.
+     */
+    fun handleSetThreads(value: String?) {
+        val n = value?.toIntOrNull() ?: return
+        if (n <= 0) return
+        com.karaokei.core.ai.ort.OrtSessionFactory.intraOpThreads = n
+        Log.i(TAG, "ORT intra-op threads set to $n via debug trigger")
+    }
+
+    /**
      * Override the seeder's auto-start preference. Pass `false` to stop
      * [com.karaokei.android.testaudio.DefaultTestAudioSeeder] from kicking
      * off the default song's pipeline on cold start, which races with the
@@ -253,6 +264,7 @@ class DebugPipelineTrigger @Inject constructor(
         const val EXTRA_SEED_MODEL_PATH: String = "debug_seed_model_path"
         const val EXTRA_SET_TIER: String = "debug_set_tier"
         const val EXTRA_SET_BACKEND: String = "debug_set_backend"
+        const val EXTRA_SET_THREADS: String = "debug_set_threads"
         const val EXTRA_SET_AUTO_START: String = "debug_set_auto_start"
         const val EXTRA_SET_LANGUAGE: String = "debug_set_language"
     }

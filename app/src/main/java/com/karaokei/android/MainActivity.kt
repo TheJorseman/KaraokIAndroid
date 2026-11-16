@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
         )
         debugPipelineTrigger.handleSetTier(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_TIER))
         debugPipelineTrigger.handleSetBackend(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_BACKEND))
+        debugPipelineTrigger.handleSetThreads(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_THREADS))
         debugPipelineTrigger.handleSetAutoStart(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_AUTO_START))
         debugPipelineTrigger.handleSetLanguage(source.getStringExtra(DebugPipelineTrigger.EXTRA_SET_LANGUAGE))
     }

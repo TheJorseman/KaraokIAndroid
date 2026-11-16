@@ -20,6 +20,7 @@ class KaraokeApp : Application(), Configuration.Provider {
     @Inject lateinit var defaultTestAudioSeeder: DefaultTestAudioSeeder
     @Inject lateinit var catalogSyncer: CatalogSyncer
     @Inject lateinit var songDao: com.karaokei.core.data.db.dao.SongDao
+    @Inject lateinit var pipelineOrchestrator: com.karaokei.feature.pipeline.PipelineOrchestrator
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -29,6 +30,11 @@ class KaraokeApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // When the foreground service cannot be started (app in
+        // background on Android 12+), run the pipeline in-process
+        // instead of crashing.
+        com.karaokei.android.pipeline.PipelineForegroundService.inProcessFallback =
+            { songId -> pipelineOrchestrator.runAsync(songId) }
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             // A crash mid-pipeline leaves songs stuck at
             // "Separando voz…" / "Transcribiendo…" forever. At cold

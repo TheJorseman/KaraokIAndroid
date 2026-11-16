@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.karaokei.android.MainActivity
 import com.karaokei.android.R
@@ -170,18 +171,42 @@ class PipelineForegroundService : Service() {
     }
 
     companion object {
+        private const val TAG: String = "PipelineForegroundService"
         const val CHANNEL_ID: String = "pipeline_progress"
         const val NOTIFICATION_ID: Int = 0x1A03
         const val EXTRA_SONG_ID: String = "song_id"
         const val ACTION_CANCEL: String = "com.karaokei.android.pipeline.CANCEL"
 
+        /**
+         * Fallback used when the foreground service cannot be started
+         * (Android 12+ throws ForegroundServiceStartNotAllowedException
+         * for background starts). Registered by `KaraokeApp` so the
+         * pipeline still runs in-process instead of crashing the app.
+         */
+        @Volatile
+        var inProcessFallback: ((String) -> Unit)? = null
+
         fun start(context: Context, songId: String) {
             val intent = Intent(context, PipelineForegroundService::class.java)
                 .putExtra(EXTRA_SONG_ID, songId)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "foreground service start failed (${t.message}); " +
+                        "running pipeline in-process without notification",
+                )
+                val fallback = inProcessFallback
+                if (fallback != null) {
+                    fallback(songId)
+                } else {
+                    Log.e(TAG, "no in-process fallback registered; pipeline not started")
+                }
             }
         }
     }

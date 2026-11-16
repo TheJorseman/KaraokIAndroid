@@ -19,11 +19,15 @@ import java.util.EnumSet
  *  - `CPU`     — Vanilla CPU execution. The slowest but most
  *                portable; useful for diagnostic baselines.
  *
- * The active backend is set by [activeBackend] (default: CPU, the most
- * portable and precise). XNNPACK overflows some graphs (MDX-Net) and
- * inflates RSS, and NNAPI falls back to a slow `nnapi-reference`
- * implementation on many devices. The user can override it at runtime
- * via `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
+ * The active backend is set by [activeBackend] (default: AUTO, which
+ * registers NNAPI first and falls back to XNNPACK/CPU for whatever the
+ * NPU cannot take). Benchmarked on a Snapdragon 8 Gen 3 (SM8650) with
+ * HTDemucs FT: NNAPI 26.6 s vs XNNPACK 30.4 s vs CPU 32.5 s for the
+ * same 30 s clip at 6 intra-op threads, with identical output quality
+ * (vocals/source RMS ratio 0.25–0.32, no NaN). Devices whose NNAPI HAL
+ * is missing or slow fall through to the CPU EP automatically; the
+ * user can override the choice at runtime via
+ * `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
  * "XNNPACK" | "AUTO")`.
  *
  * QNN (Qualcomm NPU) is documented as a post-MVP item — see
@@ -34,13 +38,40 @@ import java.util.EnumSet
 object OrtSessionFactory {
 
     enum class Backend {
-        AUTO,    // XNNPACK + NNAPI fallback (production default)
+        AUTO,    // NNAPI first, then XNNPACK, CPU fallback (production default)
         XNNPACK, // CPU only, XNNPACK-optimised
         CPU,     // CPU only, plain ORT CPU EP
-        NNAPI,   // NNAPI only
+        NNAPI,   // NNAPI only (falls back to CPU for unsupported nodes)
     }
 
-    @Volatile var activeBackend: Backend = Backend.CPU
+    @Volatile var activeBackend: Backend = Backend.AUTO
+
+    /**
+     * Intra-op thread count. Historically fixed at 2 to cap the peak
+     * activation footprint on 4–6 GB devices (HTDemucs / RoFormer OOM
+     * otherwise). On high-RAM flagships that leaves most of the CPU
+     * idle, so the default now adapts and `DebugPipelineTrigger`
+     * (`debug_set_threads`) can override it for measurements.
+     */
+    @Volatile var intraOpThreads: Int = defaultIntraOpThreads()
+
+    private fun defaultIntraOpThreads(): Int {
+        val cores = Runtime.getRuntime().availableProcessors()
+        // Memory is the binding constraint for the big separation
+        // graphs: each intra-op thread keeps its own scratch buffers.
+        // <= 6 GB devices keep the conservative 2; bigger devices can
+        // afford half the cores (big.LITTLE aware, capped at 6).
+        val totalMemBytes = readTotalMemKb() * 1024L
+        val highRam = totalMemBytes == 0L || totalMemBytes >= 6L * 1024 * 1024 * 1024
+        return if (highRam) (cores / 2).coerceIn(2, 6) else 2
+    }
+
+    private fun readTotalMemKb(): Long = runCatching {
+        java.io.File("/proc/meminfo").useLines { lines ->
+            lines.firstOrNull { it.startsWith("MemTotal:") }
+                ?.filter { it.isDigit() }?.toLongOrNull() ?: 0L
+        }
+    }.getOrDefault(0L)
 
     fun createSessionOptions(environment: OrtEnvironment): AppResult<OrtSession.SessionOptions> =
         createSessionOptions(environment, activeBackend)
@@ -56,13 +87,9 @@ object OrtSessionFactory {
         return runCatchingResult {
             val options = OrtSession.SessionOptions()
             // RAM budget: each intra-op thread keeps its own scratch
-            // buffers for the graph, so halving the thread count from
-            // `availableProcessors().coerceAtMost(4)` to a fixed 2 cuts
-            // the peak activation footprint substantially on 4-6 GB
-            // devices (HTDemucs / RoFormer OOM otherwise). We run the
-            // pipeline sequentially anyway, so 1 inter-op thread is
-            // enough.
-            options.setIntraOpNumThreads(2)
+            // buffers for the graph, so the thread count trades speed
+            // against peak activation footprint. See [intraOpThreads].
+            options.setIntraOpNumThreads(intraOpThreads)
             options.setInterOpNumThreads(1)
             options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             // Memory-pattern optimisation allocates the arena for EVERY
@@ -74,7 +101,10 @@ object OrtSessionFactory {
             // cost of a small per-run planning overhead.
             options.setMemoryPatternOptimization(false)
             val backends: List<String> = when (backend) {
-                Backend.AUTO -> listOf("XNNPACK") + nnapiIfAvailable()
+                // EP registration order = priority: NNAPI takes what it
+                // can, XNNPACK picks up the rest, CPU handles whatever
+                // is left (implicit ORT fallback).
+                Backend.AUTO -> nnapiIfAvailable() + listOf("XNNPACK")
                 Backend.XNNPACK -> listOf("XNNPACK")
                 Backend.CPU -> listOf("CPU")
                 Backend.NNAPI -> listOf("NNAPI")
@@ -82,13 +112,19 @@ object OrtSessionFactory {
             backends.forEach { providerName ->
                 try {
                     when (providerName) {
-                        "XNNPACK" -> options.addXnnpack(mapOf("intra_op_num_threads" to "2"))
+                        "XNNPACK" -> options.addXnnpack(mapOf("intra_op_num_threads" to intraOpThreads.toString()))
                         "NNAPI" -> options.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16))
                         "CPU" -> Unit // CPU is the ORT default; no explicit registration
                         else -> Unit
                     }
                 } catch (t: Throwable) {
-                    // Provider not built into this ORT distribution; skip silently.
+                    // Provider not built into this ORT distribution or
+                    // refused to register: log it so backend benchmarks
+                    // can't silently fall back to CPU.
+                    android.util.Log.w(
+                        "OrtSessionFactory",
+                        "provider $providerName failed to register (${t.message}); falling back to CPU",
+                    )
                 }
             }
             options
