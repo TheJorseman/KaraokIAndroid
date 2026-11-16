@@ -14,6 +14,7 @@ import com.karaokei.core.data.preferences.UserPreferences
 import com.karaokei.feature.karaoke.engine.KaraokeDocument
 import com.karaokei.feature.karaoke.engine.LrcParser
 import com.karaokei.feature.karaoke.engine.LyricsAligner
+import com.karaokei.feature.karaoke.engine.LyricsCalibrator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -99,11 +100,27 @@ class SyncOnlineLyricsUseCase @Inject constructor(
                     ?.map { LyricsAligner.RealLine(it.trim(), null) }
             if (realLines.isNullOrEmpty()) return
 
-            val aligned = LyricsAligner.align(realLines, local)
+            var aligned = LyricsAligner.align(realLines, local)
             if (aligned == null) {
                 Log.w(TAG, "lyrics match too weak; keeping local transcription")
                 marker.writeText(json.encodeToString(Marker.serializer(), Marker(source = "rejected")))
                 return
+            }
+
+            // Phase-3 auto-calibration: shift the whole document so
+            // line starts follow the vocal onsets of the user's own
+            // vocals track (fixes LRC offsets from the original
+            // recording and small ASR drift).
+            val vocalsFile = cacheLayout.vocalsFile(songId)
+            if (vocalsFile.exists()) {
+                val vocals = withContext(Dispatchers.IO) {
+                    com.karaokei.core.media.io.WavReader.readPcm16Mono(vocalsFile)
+                }
+                val calibrated = LyricsCalibrator.calibrate(aligned, vocals, VOCALS_SAMPLE_RATE)
+                if (calibrated !== aligned) {
+                    Log.i(TAG, "lyrics offset auto-calibrated")
+                    aligned = calibrated
+                }
             }
 
             karaokeFile.writeText(json.encodeToString(KaraokeDocument.serializer(), aligned))
@@ -157,5 +174,6 @@ class SyncOnlineLyricsUseCase @Inject constructor(
         private const val TAG = "LyricsSync"
         private const val MARKER_FILE = "lyrics_sync.json"
         private const val TAG_PREFIX = "lyrics-sync:"
+        private const val VOCALS_SAMPLE_RATE = 16000
     }
 }

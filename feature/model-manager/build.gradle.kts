@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:data"))
     implementation(project(":core:designsystem"))
+    implementation(project(":core:media"))
     implementation(project(":feature:karaoke-engine"))
 
     implementation(libs.kotlinx.coroutines.android)
