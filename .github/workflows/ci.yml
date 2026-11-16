@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -26,6 +26,12 @@ jobs:
           git -C third_party/whisper.cpp fetch --depth 1 origin 48f628a84833905ee4a0658ee6d4a5c915ce1997
           git -C third_party/whisper.cpp checkout --detach 48f628a84833905ee4a0658ee6d4a5c915ce1997
 
+      - name: Tune Gradle memory for CI runners (7 GB)
+        run: |
+          echo "org.gradle.jvmargs=-Xmx2560m -XX:MaxMetaspaceSize=512m" >> gradle.properties
+          echo "kotlin.daemon.jvmargs=-Xmx1024m" >> gradle.properties
+          echo "org.gradle.workers.max=2" >> gradle.properties
+
       - name: Build and test
         run: |
           chmod +x ./gradlew
@@ -34,7 +40,7 @@ jobs:
             :core:ai:testDebugUnitTest \
             :core:media:testDebugUnitTest \
             :feature:separation:testDebugUnitTest \
-            :feature:karaoke-engine:test 2>&1 | tee build-log.txt
+            :feature:karaoke-engine:test --stacktrace 2>&1 | tee build-log.txt
 
       - name: Report failure details
         if: failure()
