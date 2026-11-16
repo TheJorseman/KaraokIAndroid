@@ -75,6 +75,9 @@ venv/
 scripts/download_cache/
 scripts/build_output/
 scripts/emulator_models/
+# Copyrighted demo audio is not tracked; drop a copy locally to bundle
+# it (the app falls back to the generated synthetic tune otherwise).
+*.mp3
 scripts/fixtures/calibration/
 # scripts/fixtures/test_sweep.wav is committed (small, deterministic).
 # scripts/fixtures/te_juro_que_te_amo.mp3 IS committed (real song bundled in APK).

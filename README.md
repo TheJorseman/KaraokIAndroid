@@ -1,5 +1,8 @@
 # KaraokIAndroid
 
+[![CI](https://github.com/TheJorseman/KaraokIAndroid/actions/workflows/ci.yml/badge.svg)](https://github.com/TheJorseman/KaraokIAndroid/actions/workflows/ci.yml)
+[![Release](https://github.com/TheJorseman/KaraokIAndroid/actions/workflows/release.yml/badge.svg)](https://github.com/TheJorseman/KaraokIAndroid/actions/workflows/release.yml)
+
 Android karaoke app that turns any local audio or video file into a
 singable track. The user imports a song, the app isolates the vocal
 melody with an on-device neural network, transcribes the lyrics with
@@ -10,6 +13,18 @@ lyrics and sync them onto the locally generated timestamps.
 The whole audio pipeline runs on-device — the only network use is the
 model manager (model downloads) and the opt-in online lyrics sync,
 which sends just the title/artist/duration (never audio).
+
+## Screenshots
+
+| Library | Song detail |
+| --- | --- |
+| ![Library](docs/screenshots/library.png) | ![Song detail](docs/screenshots/detail.png) |
+
+| Karaoke player (real lyrics, word sync) | Pipeline progress |
+| --- | --- |
+| ![Karaoke player](docs/screenshots/player.png) | ![Pipeline progress](docs/screenshots/progress.png) |
+
+![Model manager](docs/screenshots/models.png)
 
 ## Current status
 
@@ -61,12 +76,13 @@ third_party/whisper.cpp/    (ignored) cloned by scripts/fetch_whisper.ps1
 
 ## What the user sees
 
-1. On first launch the bundled "Te Juro Que Te Amo" MP3 is imported
-   into the library. Processing is started from the song's detail
-   screen ("Procesar / reprocesar") and runs in a foreground service
-   with a determinate progress banner ("Separando voz · Etapa 1 de 3
-   · 42%") that advances through separation → transcription →
-   alignment.
+1. On first launch the demo song is imported into the library: the
+   bundled "Te Juro Que Te Amo" MP3 when the build includes it, or a
+   generated synthetic tune otherwise. Processing is started from the
+   song's detail screen ("Procesar / reprocesar") and runs in a
+   foreground service with a determinate progress banner
+   ("Separando voz · Etapa 1 de 3 · 42%") that advances through
+   separation → transcription → alignment.
 2. The karaoke player renders synced lyrics over the instrumental
    track: the active line wraps to multiple rows, previously/next
    lines fade in context, the current word lights up progressively,
@@ -89,8 +105,11 @@ Bundled in the APK (offline-first):
 
 | Asset | Size | Role | SHA-256 |
 | --- | --- | --- | --- |
-| `assets/songs/te_juro_que_te_amo.mp3` | 3.7 MB | Demo song | (sha-256 of file contents = song id) |
 | `assets/transcription/ggml-tiny-q5_1.bin` | 30.7 MB | Fast transcription | `818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7` |
+
+Optionally bundled (not tracked in git): the demo song
+`assets/songs/te_juro_que_te_amo.mp3`; without it the seeder generates
+a small synthetic tune so the pipeline is usable out of the box.
 
 Downloaded on demand (see `app/src/main/assets/models/catalog.json`,
 v9 — all URLs and checksums verified against upstream Hugging Face):
@@ -109,6 +128,22 @@ The standard Android Studio toolchain:
 ```
 gradlew :app:assembleDebug
 ```
+
+The demo song "Te Juro Que Te Amo" is **not tracked in the repository**
+(it is a copyrighted recording). To bundle it in your build, drop the
+MP3 at `app/src/main/assets/songs/te_juro_que_te_amo.mp3` before
+building; without it the app seeds a small generated synthetic tune
+instead and everything else works the same.
+
+### CI/CD
+
+- `ci.yml` — every push/PR builds the debug APK and runs the JVM test
+  suites on GitHub Actions (uploads the APK as a build artifact).
+- `release.yml` — pushing a tag like `v1.2.0` (or running it manually
+  from the Actions tab) builds and publishes the APK to GitHub
+  Releases. Set the `KEYSTORE_BASE64` secret (base64 of the release
+  keystore) for production-signed builds; without it a debug-signed
+  APK is published so the pipeline works out of the box.
 
 ### Build environment
 

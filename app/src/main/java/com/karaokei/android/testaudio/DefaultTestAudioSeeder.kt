@@ -62,6 +62,9 @@ class DefaultTestAudioSeeder @Inject constructor(
     suspend fun seed() {
         val song = withContext(io) {
             val primary = resolvePrimarySong()
+                ?: syntheticSong().also {
+                    Log.i(TAG, "No demo MP3 bundled; using the generated synthetic tune")
+                }
             Log.i(TAG, "Importing default song from ${primary.absolutePath}")
             songRepository.import(Uri.fromFile(primary)).getOrNull()?.entity
         }
@@ -90,7 +93,7 @@ class DefaultTestAudioSeeder @Inject constructor(
         PipelineForegroundService.start(context, songId)
     }
 
-    private fun resolvePrimarySong(): File {
+    private fun resolvePrimarySong(): File? {
         // 1. Files-dir override (dev push). Use a distinct filename
         //    ("...override.mp3") so the bundled extract below can't
         //    shadow a developer-pushed file with the canonical name.
@@ -104,16 +107,30 @@ class DefaultTestAudioSeeder @Inject constructor(
             Log.i(TAG, "Using seeded Te Juro Que Te Amo at ${filesDirTeJuro.absolutePath}")
             return filesDirTeJuro
         }
-        // 2. Bundled APK asset (production default)
+        // 2. Bundled APK asset. The copyrighted demo MP3 is not tracked
+        //    in git: developers drop it into assets/songs/ locally and
+        //    CI builds simply omit it, so a missing asset must never
+        //    crash startup.
         val extractedTeJuro = File(context.filesDir, EXTRACTED_TE_JURO_FILE_NAME)
         if (!extractedTeJuro.exists() || extractedTeJuro.length() < MIN_TE_JURO_SIZE) {
-            extractedTeJuro.parentFile?.mkdirs()
-            context.assets.open(BUNDLED_TE_JURO_ASSET).use { input ->
-                extractedTeJuro.outputStream().use { output -> input.copyTo(output) }
+            return try {
+                extractedTeJuro.parentFile?.mkdirs()
+                context.assets.open(BUNDLED_TE_JURO_ASSET).use { input ->
+                    extractedTeJuro.outputStream().use { output -> input.copyTo(output) }
+                }
+                Log.i(TAG, "Extracted bundled Te Juro Que Te Amo from $BUNDLED_TE_JURO_ASSET to ${extractedTeJuro.absolutePath}")
+                extractedTeJuro
+            } catch (t: Throwable) {
+                Log.w(TAG, "bundled demo song not available (${t.message})")
+                null
             }
-            Log.i(TAG, "Extracted bundled Te Juro Que Te Amo from $BUNDLED_TE_JURO_ASSET to ${extractedTeJuro.absolutePath}")
         }
         return extractedTeJuro
+    }
+
+    private suspend fun syntheticSong(): File {
+        seedSyntheticFallback()
+        return File(context.filesDir, SYNTHETIC_FILE_NAME)
     }
 
     /**

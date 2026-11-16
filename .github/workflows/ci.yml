@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Fetch whisper.cpp (pinned commit)
+        run: |
+          git clone --no-checkout https://github.com/ggerganov/whisper.cpp.git third_party/whisper.cpp
+          git -C third_party/whisper.cpp fetch --depth 1 origin 48f628a84833905ee4a0658ee6d4a5c915ce1997
+          git -C third_party/whisper.cpp checkout --detach 48f628a84833905ee4a0658ee6d4a5c915ce1997
+
+      - name: Build and test
+        run: >-
+          ./gradlew :app:assembleDebug
+          :core:ai:testDebugUnitTest
+          :core:media:testDebugUnitTest
+          :feature:separation:testDebugUnitTest
+          :feature:karaoke-engine:test
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: karaokei-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
