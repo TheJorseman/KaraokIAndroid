@@ -136,10 +136,23 @@ class ModelLoader @Inject constructor(
     private fun upcastForArm64(path: String): String {
         val file = File(path)
         if (!file.name.endsWith(".onnx")) return path
-        if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) return path
+        val isArm64 = android.os.Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+        android.util.Log.i(
+            "ModelLoader",
+            "upcastForArm64: path=$path arm64=$isArm64 abis=${android.os.Build.SUPPORTED_ABIS.joinToString()}",
+        )
+        if (!isArm64) return path
         val out = File(file.parentFile, file.name.replace(Regex("\\.onnx$"), ".fp32.onnx"))
         if (out.exists() && out.length() > 0) return out.absolutePath
         return try {
+            val hasFp16 = try {
+                OnnxFp32Upcast.containsFp16Initializers(file)
+            } catch (t: Throwable) {
+                android.util.Log.w("ModelLoader", "fp16 scan failed: ${t.message}")
+                false
+            }
+            android.util.Log.i("ModelLoader", "upcastForArm64: hasFp16=$hasFp16")
+            if (!hasFp16) return path
             val converted = OnnxFp32Upcast.upcast(file, out)
             android.util.Log.i(
                 "ModelLoader",

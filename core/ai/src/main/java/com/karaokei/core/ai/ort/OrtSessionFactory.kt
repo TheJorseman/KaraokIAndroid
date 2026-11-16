@@ -21,15 +21,13 @@ import java.util.EnumSet
  *
  * The active backend is set by [activeBackend] (default: CPU).
  *
- * Quality warning — do NOT switch the default to NNAPI/XNNPACK
- * without re-running the full-song separation quality check. Benchmarks
- * on a Snapdragon 8 Gen 3 (SM8650) measured NNAPI ~20% faster than CPU
- * (26.6 s vs 32.5 s per 30 s of HTDemucs FT), but the NNAPI output is
- * acoustically degraded: the vocal estimate is attenuated (RMS 0.049 vs
- * 0.068 on the same song), which leaves audible vocals in
- * `instrumental.wav` (= mix − vocals) and makes Whisper hallucinate on
- * the distorted vocals. CPU produces clean vocals and correct
- * transcripts. The user can override at runtime via
+ * Benchmarks on a Snapdragon 8 Gen 3 (SM8650) with HTDemucs FT
+ * measured NNAPI ~20% faster than CPU (26.6 s vs 32.5 s per 30 s of
+ * audio). Output quality for the non-CPU backends is NOT yet
+ * validated against the CPU reference on real devices (an earlier
+ * quality comparison was invalid due to a model-selection bug), so
+ * CPU stays the default until an A/B on the same model confirms
+ * NNAPI. The user can override at runtime via
  * `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
  * "XNNPACK" | "AUTO" | "QNN")`.
  *

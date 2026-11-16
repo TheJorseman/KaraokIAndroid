@@ -41,6 +41,18 @@ class CatalogSyncer @Inject constructor(
                 modelDao.upsert(merge(existing, entry))
             }
         }
+        // Prune rows from older catalogs: a model that is no longer in
+        // the catalog is obsolete (often replaced by a different file
+        // for the same tier). Stale rows used to win the
+        // `LIMIT 1` tier lookup and silently ran the wrong model
+        // (e.g. an old MDX-Net row instead of HTDemucs FT).
+        val known = catalog.entries.map { it.id }.toSet()
+        modelDao.observeAllOnce()
+            .filterNot { it.id in known }
+            .forEach { stale ->
+                Log.w(TAG, "Pruning stale model row not in catalog: ${stale.id}")
+                modelDao.deleteById(stale.id)
+            }
     }
 
     private fun merge(existing: ModelEntity, entry: CatalogEntry): ModelEntity {

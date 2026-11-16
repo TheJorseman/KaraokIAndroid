@@ -14,6 +14,9 @@ interface ModelDao {
     @Query("SELECT * FROM models ORDER BY tier, type")
     fun observeAll(): Flow<List<ModelEntity>>
 
+    @Query("SELECT * FROM models ORDER BY tier, type")
+    suspend fun observeAllOnce(): List<ModelEntity>
+
     @Query("SELECT * FROM models WHERE tier = :tier AND type = :type LIMIT 1")
     suspend fun findByTierAndType(tier: ModelTier, type: ModelType): ModelEntity?
 
@@ -22,10 +25,12 @@ interface ModelDao {
      * in the asset pack or already downloaded (`local_path` set).
      * Rows for models that were never downloaded are excluded so the
      * pipeline falls back to a usable model instead of failing at
-     * session open time.
+     * session open time. Ordered by insertion so the pick is
+     * deterministic (stale rows from old catalogs are pruned by
+     * CatalogSyncer).
      */
     @Query("SELECT * FROM models WHERE tier = :tier AND type = :type " +
-        "AND (is_embedded = 1 OR local_path IS NOT NULL) LIMIT 1")
+        "AND (is_embedded = 1 OR local_path IS NOT NULL) ORDER BY rowid LIMIT 1")
     suspend fun findUsableByTierAndType(tier: ModelTier, type: ModelType): ModelEntity?
 
     @Query("SELECT * FROM models WHERE type = :type")
