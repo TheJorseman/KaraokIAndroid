@@ -23,13 +23,9 @@ import java.util.EnumSet
  *
  * Benchmarks on a Snapdragon 8 Gen 3 (SM8650) with HTDemucs FT
  * measured NNAPI ~20% faster than CPU (26.6 s vs 32.5 s per 30 s of
- * audio). Output quality for the non-CPU backends is NOT yet
- * validated against the CPU reference on real devices (an earlier
- * quality comparison was invalid due to a model-selection bug), so
- * CPU stays the default until an A/B on the same model confirms
- * NNAPI. The user can override at runtime via
- * `DebugPipelineTrigger.handleSetBackend("NNAPI" | "CPU" |
- * "XNNPACK" | "AUTO" | "QNN")`.
+ * audio). Output quality for the non-CPU backends is not yet
+ * validated against the CPU reference on real devices, so CPU stays
+ * the default until an A/B on the same model confirms NNAPI.
  *
  * QNN (Qualcomm NPU) is documented as a post-MVP item — see
  * `docs/post-mvp.md`. The Qualcomm AI Engine SDK is required and
@@ -39,64 +35,19 @@ import java.util.EnumSet
 object OrtSessionFactory {
 
     enum class Backend {
-        AUTO,    // NNAPI first, then XNNPACK, CPU fallback (production default)
+        AUTO,    // NNAPI first, then XNNPACK, CPU fallback
         XNNPACK, // CPU only, XNNPACK-optimised
         CPU,     // CPU only, plain ORT CPU EP
         NNAPI,   // NNAPI only (falls back to CPU for unsupported nodes)
-        QNN,     // Qualcomm QNN plugin EP (Hexagon NPU via libQnnHtp.so)
     }
 
     @Volatile var activeBackend: Backend = Backend.CPU
-
-    // ------------------------------------------------------------------
-    // QNN (Qualcomm Hexagon NPU). The ORT build with the QNN EP ships
-    // as `onnxruntime-android-qnn`; the HTP backend libs come from
-    // `com.qualcomm.qti:qnn-runtime`. Without either (or on
-    // non-Qualcomm devices) addQnn() throws and we fall back to the
-    // CPU EP.
-    // ------------------------------------------------------------------
-
-    /**
-     * HTP architecture for the current SoC (kept for when the QNN EP
-     * is compiled in; SM8650 = HTP v75).
-     */
-    internal fun qnnHtpArch(): String {
-        val soc = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            android.os.Build.SOC_MODEL.orEmpty()
-        } else {
-            ""
-        }.uppercase()
-        return when {
-            "SM8750" in soc -> "79"
-            "SM8650" in soc -> "75"
-            "SM8550" in soc -> "73"
-            "SM8475" in soc -> "73"
-            "SM8450" in soc -> "69"
-            else -> "75"
-        }
-    }
-
-    /**
-     * The QNN EP is not compiled into the standard ORT build and the
-     * -qnn AAR variant produced degraded separation output on real
-     * devices (see the class docs). Kept as an explicit option so a
-     * future build can wire it without touching callers; it falls
-     * back to the CPU EP with a clear log.
-     */
-    private fun addQnnProvider(options: OrtSession.SessionOptions): Boolean {
-        android.util.Log.w(
-            "OrtSessionFactory",
-            "QNN backend not available in this build; falling back to CPU EP",
-        )
-        return false
-    }
 
     /**
      * Intra-op thread count. Historically fixed at 2 to cap the peak
      * activation footprint on 4–6 GB devices (HTDemucs / RoFormer OOM
      * otherwise). On high-RAM flagships that leaves most of the CPU
-     * idle, so the default now adapts and `DebugPipelineTrigger`
-     * (`debug_set_threads`) can override it for measurements.
+     * idle, so the default now adapts to the device.
      */
     @Volatile var intraOpThreads: Int = defaultIntraOpThreads()
 
@@ -153,10 +104,6 @@ object OrtSessionFactory {
                 Backend.XNNPACK -> listOf("XNNPACK")
                 Backend.CPU -> listOf("CPU")
                 Backend.NNAPI -> listOf("NNAPI")
-                Backend.QNN -> emptyList() // attached below via EP devices
-            }
-            if (backend == Backend.QNN && !addQnnProvider(options)) {
-                android.util.Log.w("OrtSessionFactory", "QNN backend unavailable; falling back to CPU EP")
             }
             backends.forEach { providerName ->
                 try {

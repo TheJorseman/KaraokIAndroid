@@ -30,18 +30,6 @@ class KaraokeApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        // The QNN HTP backend loads the Hexagon skel (e.g.
-        // libQnnHtpV75Skel.so) through FastRPC, which resolves it via
-        // ADSP_LIBRARY_PATH. Inside an app process that variable is
-        // empty by default and the DSP finds nothing, so point it at
-        // the extracted native libs before any QNN session is created.
-        runCatching {
-            val libDir = applicationInfo.nativeLibraryDir
-            android.system.Os.setenv("ADSP_LIBRARY_PATH", libDir, true)
-            android.util.Log.i(TAG, "ADSP_LIBRARY_PATH=$libDir")
-        }.onFailure {
-            Log.w(TAG, "could not set ADSP_LIBRARY_PATH", it)
-        }
         // When the foreground service cannot be started (app in
         // background on Android 12+), run the pipeline in-process
         // instead of crashing.

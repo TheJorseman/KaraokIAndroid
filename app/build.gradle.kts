@@ -77,11 +77,7 @@ android {
             )
         }
         jniLibs {
-            // Extract .so files to nativeLibraryDir instead of
-            // direct-loading from the APK: the QNN HTP backend loads
-            // the Hexagon skel through FastRPC, which needs real files
-            // on disk (resolved via ADSP_LIBRARY_PATH).
-            useLegacyPackaging = true
+            useLegacyPackaging = false
         }
     }
 

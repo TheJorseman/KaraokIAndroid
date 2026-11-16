@@ -65,9 +65,9 @@ class MdxNetSeparator @Inject constructor(
         require(model.type == ModelType.SEPARATION) { "not a separation model" }
         val localPath = modelLoader.resolvePath(model).getOrThrow()
         Log.i(TAG, "Running MDX-Net ${model.id} (${monoPcm.size} samples, $N_FFT-pt STFT)")
-        // Use the process-wide backend (default AUTO; override via
-        // debug_set_backend). NNAPI offloads to the DSP/NPU where the
-        // graph is supported, falling back to CPU for the rest.
+        // Use the process-wide ORT backend (CPU by default). NNAPI
+        // offloads to the DSP/NPU where the graph is supported,
+        // falling back to CPU for the rest.
         OrtSessionHandle.openFile(localPath, OrtSessionFactory.activeBackend).getOrThrow().use { session ->
             runStreaming(monoPcm, session)
         }
