@@ -55,4 +55,49 @@ class KaraokeLineBuilderTest {
             assertThat(line.words.size).isAtMost(KaraokeLineBuilder.MAX_WORDS_PER_LINE)
         }
     }
+
+    @Test fun `music annotations are dropped from the karaoke lines`() {
+        fun segment(text: String, start: Double, end: Double) =
+            com.karaokei.core.common.transcript.TranscriptSegment(
+                start = start,
+                end = end,
+                text = text,
+                words = listOf(word(text, start, end)),
+            )
+        val transcript = com.karaokei.core.common.transcript.TranscriptDocument(
+            songId = "x",
+            language = "es",
+            duration = 20.0,
+            modelId = "m",
+            segments = listOf(
+                segment("( Música )", 0.0, 5.0),
+                segment("[Music]", 5.0, 8.0),
+                segment("♪", 8.0, 9.0),
+                segment("hola cariño", 10.0, 15.0),
+                segment(" (Música) ", 15.0, 20.0),
+            ),
+        )
+        val out = KaraokeLineBuilder.build(transcript)
+        assertThat(out.lines).hasSize(1)
+        assertThat(out.lines[0].words.map { it.text }).containsExactly("hola cariño")
+    }
+
+    @Test fun `lyrics containing the word musica are kept`() {
+        val transcript = com.karaokei.core.common.transcript.TranscriptDocument(
+            songId = "x",
+            language = "es",
+            duration = 10.0,
+            modelId = "m",
+            segments = listOf(
+                com.karaokei.core.common.transcript.TranscriptSegment(
+                    start = 0.0,
+                    end = 9.0,
+                    text = "pon la música fuerte",
+                    words = listOf(word("pon", 0.0, 2.0), word("la música fuerte", 2.0, 9.0)),
+                ),
+            ),
+        )
+        val out = KaraokeLineBuilder.build(transcript)
+        assertThat(out.lines).hasSize(1)
+    }
 }

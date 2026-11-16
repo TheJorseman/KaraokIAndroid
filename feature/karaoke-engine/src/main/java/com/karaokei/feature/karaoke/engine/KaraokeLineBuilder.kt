@@ -25,8 +25,19 @@ object KaraokeLineBuilder {
     internal const val MAX_WORDS_PER_LINE: Int = 14
     private val SPLIT_MARKERS = setOf(',', '—', '–', ';')
 
+    /**
+     * Whisper hallucinates music/noise annotations on instrumental
+     * passages ("( Música )", "[Music]", "♪"). They are not lyrics and
+     * would render as fake karaoke lines, so drop whole segments whose
+     * text is only such an annotation.
+     */
+    internal val NOISE_SEGMENT: Regex =
+        Regex("""\W*[\(\[]?\s*(m[úu]sica|music|applause|aplausos|llanto|ruido|silencio|♪+|♫+)\s*[\)\]]?\s*\W*""", RegexOption.IGNORE_CASE)
+
     fun build(transcript: TranscriptDocument): KaraokeDocument {
-        val lines = transcript.segments.flatMap { segment -> linesFor(segment) }
+        val lines = transcript.segments
+            .filterNot { NOISE_SEGMENT.matches(it.text.trim()) }
+            .flatMap { segment -> linesFor(segment) }
         return KaraokeDocument(
             songId = transcript.songId,
             language = transcript.language,

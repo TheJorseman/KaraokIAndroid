@@ -56,7 +56,7 @@ fun SongDetailScreen(
             }
             Button(
                 onClick = onPlay,
-                enabled = state.song?.status == SongStatus.READY,
+                enabled = state.song?.status == SongStatus.READY || state.hasKaraoke,
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Reproducir karaoke") }
             // Always enabled: tapping re-processes the song. While a

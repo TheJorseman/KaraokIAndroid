@@ -21,6 +21,9 @@ import com.karaokei.core.whisper.WhisperSegment
 import com.karaokei.core.whisper.WhisperTranscriber
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -50,9 +53,15 @@ class TranscribeSongUseCase @Inject constructor(
         ignoreUnknownKeys = true
     }
 
+    private val _progress = MutableStateFlow(0f)
+
+    /** 0..1 transcription progress, advanced as segments arrive. */
+    val progress: StateFlow<Float> = _progress.asStateFlow()
+
     suspend operator fun invoke(songId: String): AppResult<TranscriptDocument> = runCatchingResult {
         val song = songDao.findById(songId)
             ?: throw IllegalStateException("song $songId not found")
+        _progress.value = 0f
         val tier = preferences.selectedTier.first()
         val testFixture = song.fileUri.endsWith("karaokei-test-audio.wav")
         // Prefer the selected tier's model, then fall back to any
@@ -115,10 +124,18 @@ class TranscribeSongUseCase @Inject constructor(
         val segments = mutableListOf<TranscriptSegment>()
         var detectedLanguage: String = "unknown"
         val preferredLanguage = preferences.preferredLanguage.first()
+        val durationMs = song.durationMs.coerceAtLeast(1L)
         transcriber.transcribe(vocals, transcriptionModel, preferredLanguage).collect { event ->
             when (event) {
                 is WhisperEvent.LanguageDetected -> detectedLanguage = event.language
-                is WhisperEvent.Segment -> segments += event.segment.toTranscriptSegment()
+                is WhisperEvent.Segment -> {
+                    segments += event.segment.toTranscriptSegment()
+                    // Whisper emits segments in order; the segment end
+                    // time is the best estimate of how far along the
+                    // audio we are.
+                    _progress.value =
+                        (event.segment.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                }
                 is WhisperEvent.Completed -> Unit
                 is WhisperEvent.Error -> throw IllegalStateException(event.message)
             }

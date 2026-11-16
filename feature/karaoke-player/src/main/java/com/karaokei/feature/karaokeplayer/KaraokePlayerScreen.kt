@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +37,7 @@ import com.karaokei.feature.karaokeplayer.renderer.KaraokeLyricsRenderer
 @Composable
 fun KaraokePlayerScreen(
     songId: String,
+    onBack: () -> Unit = {},
     viewModel: KaraokePlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -64,14 +67,19 @@ fun KaraokePlayerScreen(
 
     KaraokeStageBackground {
         Box(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                Text(
-                    text = state.song?.title ?: "—",
-                    color = Color.White,
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+                PlayerHeader(
+                    title = state.song?.title ?: "—",
+                    subtitle = state.song?.artist ?: "Karaoke",
+                    onBack = onBack,
                 )
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     if (state.error != null) {
-                        Text(state.error ?: "", color = Color.White)
+                        Text(
+                            text = state.error ?: "",
+                            color = Color.White.copy(alpha = 0.85f),
+                            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+                        )
                     } else {
                         KaraokeLyricsRenderer(state = engineState)
                     }
@@ -91,6 +99,54 @@ fun KaraokePlayerScreen(
 }
 
 @Composable
+private fun PlayerHeader(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Volver",
+                tint = Color.White,
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color.White,
+                style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                color = Color.White.copy(alpha = 0.7f),
+                style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** `239000 ms` → `"3:59"`. */
+internal fun formatClock(millis: Long): String {
+    val totalSeconds = (millis.coerceAtLeast(0L)) / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+@Composable
 private fun PlayerControls(
     positionMs: Long,
     durationMs: Long,
@@ -101,13 +157,16 @@ private fun PlayerControls(
     onNudgeOffset: (Int) -> Unit,
 ) {
     val safeDuration = if (durationMs <= 0L) 1L else durationMs
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.padding(bottom = 24.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            IconButton(onClick = onTogglePlayPause) {
+            IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(48.dp)) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pausa" else "Reproducir",
@@ -119,10 +178,16 @@ private fun PlayerControls(
                 onValueChange = { onSeek(it.toLong()) },
                 valueRange = 0f..safeDuration.toFloat(),
                 modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                ),
             )
             Text(
-                text = "${positionMs / 1000}s / ${durationMs / 1000}s",
-                color = Color.White,
+                text = "${formatClock(positionMs)} / ${formatClock(durationMs)}",
+                color = Color.White.copy(alpha = 0.9f),
+                style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
             )
         }
         OffsetRow(lyricsOffsetMs = lyricsOffsetMs, onNudgeOffset = onNudgeOffset)

@@ -105,7 +105,23 @@ class PipelineOrchestrator @Inject constructor(
             if (!cacheLayout.hasTranscript(songId)) {
                 _state.update { it.copy(stage = PipelineStageName.TRANSCRIBING, progress = 55) }
                 val transcriptionStart = System.nanoTime()
-                transcribeUseCase(songId).getOrThrow()
+                // Mirror the whisper segment progress into the state so
+                // the bar keeps moving during the (potentially long)
+                // transcription instead of freezing at 55%.
+                var progressJob: Job? = null
+                try {
+                    progressJob = scope.launch {
+                        transcribeUseCase.progress.collectLatest { fraction ->
+                            _state.update {
+                                val scaled = 55 + (fraction * 30).toInt().coerceIn(0, 30)
+                                it.copy(progress = scaled)
+                            }
+                        }
+                    }
+                    transcribeUseCase(songId).getOrThrow()
+                } finally {
+                    progressJob?.cancel()
+                }
                 val transcriptionMs = (System.nanoTime() - transcriptionStart) / 1_000_000
                 Log.i(
                     TAG,

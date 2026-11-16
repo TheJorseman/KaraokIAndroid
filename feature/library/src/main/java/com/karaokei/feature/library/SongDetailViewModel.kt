@@ -20,11 +20,14 @@ import javax.inject.Inject
 data class SongDetailState(
     val song: SongEntity? = null,
     val transientError: String? = null,
+    /** True when `karaoke.json` exists, even if the row status is stale. */
+    val hasKaraoke: Boolean = false,
 )
 
 @HiltViewModel
 class SongDetailViewModel @Inject constructor(
     private val songRepository: SongRepository,
+    private val cacheLayout: com.karaokei.core.data.cache.SongCacheLayout,
     private val orchestrator: PipelineOrchestrator,
 ) : ViewModel() {
 
@@ -42,7 +45,12 @@ class SongDetailViewModel @Inject constructor(
     fun load(songId: String) {
         viewModelScope.launch {
             songRepository.observeById(songId).collect { song ->
-                _state.update { it.copy(song = song) }
+                _state.update {
+                    it.copy(
+                        song = song,
+                        hasKaraoke = cacheLayout.hasKaraoke(songId),
+                    )
+                }
             }
         }
     }

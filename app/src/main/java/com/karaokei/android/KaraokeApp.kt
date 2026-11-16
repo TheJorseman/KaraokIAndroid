@@ -19,6 +19,7 @@ class KaraokeApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var defaultTestAudioSeeder: DefaultTestAudioSeeder
     @Inject lateinit var catalogSyncer: CatalogSyncer
+    @Inject lateinit var songDao: com.karaokei.core.data.db.dao.SongDao
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -29,6 +30,12 @@ class KaraokeApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            // A crash mid-pipeline leaves songs stuck at
+            // "Separando voz…" / "Transcribiendo…" forever. At cold
+            // start no pipeline is running yet, so clear those
+            // transient statuses before anything else.
+            runCatching { songDao.resetTransientStatuses() }
+                .onFailure { Log.e(TAG, "Failed to reset transient song statuses", it) }
             // Always re-sync the catalog on cold start so newly added
             // entries (e.g. an OTA catalog update) appear in the
             // model manager even when the `models` table already has

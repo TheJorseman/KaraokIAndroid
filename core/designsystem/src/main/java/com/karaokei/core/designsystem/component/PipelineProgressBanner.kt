@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -124,7 +126,7 @@ private fun ActiveCard(state: PipelineState, onCancel: () -> Unit) {
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "Etapa ${state.stage.ordinal + 1} / ${PipelineStageName.values().size - 1}",
+                        text = "Etapa ${stageNumber(state.stage)} de ${STAGE_COUNT}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
@@ -186,11 +188,24 @@ private fun PipelineState.isActive(): Boolean =
         stage != PipelineStageName.ERROR &&
         stage != PipelineStageName.CANCELLED
 
+/** Number of user-facing pipeline stages (separation → transcription → alignment). */
+private const val STAGE_COUNT: Int = 3
+
+private fun stageNumber(stage: PipelineStageName): Int = when (stage) {
+    PipelineStageName.IDLE -> 1
+    PipelineStageName.SEPARATION -> 1
+    PipelineStageName.TRANSCRIBING -> 2
+    PipelineStageName.ALIGNING -> 3
+    PipelineStageName.DONE -> 3
+    PipelineStageName.ERROR -> 3
+    PipelineStageName.CANCELLED -> 3
+}
+
 private fun stageIcon(stage: PipelineStageName) = when (stage) {
     PipelineStageName.IDLE -> Icons.Filled.HourglassEmpty
     PipelineStageName.SEPARATION -> Icons.Filled.GraphicEq
-    PipelineStageName.TRANSCRIBING -> Icons.Filled.GraphicEq
-    PipelineStageName.ALIGNING -> Icons.Filled.GraphicEq
+    PipelineStageName.TRANSCRIBING -> Icons.Filled.Subtitles
+    PipelineStageName.ALIGNING -> Icons.Filled.Timeline
     PipelineStageName.DONE -> Icons.Filled.CheckCircle
     PipelineStageName.ERROR -> Icons.Filled.Error
     PipelineStageName.CANCELLED -> Icons.Filled.Cancel

@@ -65,12 +65,15 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActive(
     val activeStyle = baseStyle(36.sp)
     val fadedStyle = baseStyle(22.sp)
 
+    // Spacing derived from the font size: fixed pixel offsets overlap
+    // on high-density screens where 36 sp is ~95 px tall.
+    val activeHalfHeight = activeStyle.fontSize.toPx() * 0.9f
     state.previousLine?.let { prev ->
-        drawCenteredLine(prev, measurer, fadedStyle, centerY - 70f, KaraokePalette.LyricPast)
+        drawCenteredLine(prev, measurer, fadedStyle, centerY - activeHalfHeight - 24f, KaraokePalette.LyricPast)
     }
     drawActiveLine(state, measurer, activeStyle, centerY)
     state.nextLine?.let { nxt ->
-        drawCenteredLine(nxt, measurer, fadedStyle, centerY + 60f, KaraokePalette.LyricUpcoming)
+        drawCenteredLine(nxt, measurer, fadedStyle, centerY + activeHalfHeight + 24f, KaraokePalette.LyricUpcoming)
     }
 }
 
@@ -93,8 +96,15 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCenteredLine(
     color: Color,
 ) {
     val text = line.words.joinToString(" ") { it.text }
-    val result: TextLayoutResult = measurer.measure(text, style)
-    val left = (size.width - result.size.width) / 2f
+    var result: TextLayoutResult = measurer.measure(text, style)
+    // Long lines overflow the canvas; shrink to fit so they stay
+    // centered and readable instead of running off both edges.
+    val maxWidth = size.width * 0.92f
+    if (result.size.width > maxWidth && result.size.width > 0) {
+        val scaled = style.copy(fontSize = style.fontSize * (maxWidth / result.size.width))
+        result = measurer.measure(text, scaled)
+    }
+    val left = ((size.width - result.size.width) / 2f).coerceAtLeast(0f)
     val top = centerY - result.size.height / 2f
     drawText(result, color = color, topLeft = Offset(left, top))
 }
@@ -105,25 +115,36 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCenteredLine(
  * Each word is laid out separately against the shared text baseline so
  * the highlight ends exactly at the current word's right edge. The
  * current word gets a horizontal gradient that reveals `wordProgress`
- * of its width.
+ * of its width. Lines wider than the canvas are auto-shrunk to fit —
+ * otherwise the trailing words draw past the right edge and the
+ * text-measuring `drawText` builds negative width constraints
+ * ("maxWidth(-2) must be >= than minWidth(0)").
  */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveLine(
     state: KaraokeState.Active,
     measurer: TextMeasurer,
-    style: TextStyle,
+    baseStyle: TextStyle,
     centerY: Float,
 ) {
     val words = state.line.words
     if (words.isEmpty()) return
 
-    val wordGap = measurer.measure(" ", style).size.width.toFloat()
-    val widths = FloatArray(words.size)
-    for (i in words.indices) {
-        widths[i] = measurer.measure(words[i].text, style).size.width.toFloat()
+    // Auto-fit: measure at the natural size first, then scale the font
+    // down when the line is wider than the canvas.
+    val maxTextWidth = size.width * 0.92f
+    var style = baseStyle
+    var wordGap = measurer.measure(" ", style).size.width.toFloat()
+    var widths = FloatArray(words.size) { i -> measurer.measure(words[i].text, style).size.width.toFloat() }
+    var totalWidth = widths.sum() + wordGap * (words.size - 1)
+    if (totalWidth > maxTextWidth && totalWidth > 0f) {
+        val scale = (maxTextWidth / totalWidth).coerceIn(0.3f, 1f)
+        style = baseStyle.copy(fontSize = baseStyle.fontSize * scale)
+        wordGap = measurer.measure(" ", style).size.width.toFloat()
+        widths = FloatArray(words.size) { i -> measurer.measure(words[i].text, style).size.width.toFloat() }
+        totalWidth = widths.sum() + wordGap * (words.size - 1)
     }
 
-    val totalWidth = widths.sum() + wordGap * (words.size - 1)
-    val startX = (size.width - totalWidth) / 2f
+    val startX = ((size.width - totalWidth) / 2f).coerceAtLeast(0f)
     val baselineY = centerY - style.fontSize.toPx() / 2f * 0.8f
 
     // Pass 1 — upcoming text (faded white).

@@ -92,6 +92,99 @@ void call_error(JNIEnv * env, jobject callback, const std::string & message) {
     env->DeleteLocalRef(klass);
 }
 
+// ------------------------------------------------------------------
+// Streaming callbacks: whisper.cpp calls these from the decoding
+// thread *as* segments are produced, so the Kotlin side sees progress
+// live instead of one burst at the end of `whisper_full`.
+// ------------------------------------------------------------------
+
+struct CallbackBridge {
+    JNIEnv * env = nullptr;          // valid: whisper_full calls back on the JNI thread
+    jobject callback = nullptr;      // local ref, valid for the transcribe call
+    jmethodID on_language = nullptr;
+    jmethodID on_segment = nullptr;
+    const char * language_name = nullptr;
+    bool language_sent = false;
+};
+
+void emit_language(CallbackBridge * bridge) {
+    if (bridge->language_sent || bridge->on_language == nullptr) return;
+    bridge->language_sent = true;
+    const char * name = bridge->language_name == nullptr ? "unknown" : bridge->language_name;
+    jstring value = bridge->env->NewStringUTF(name);
+    bridge->env->CallVoidMethod(bridge->callback, bridge->on_language, value);
+    bridge->env->DeleteLocalRef(value);
+}
+
+void emit_segment(CallbackBridge * bridge, whisper_context * ctx, int segment) {
+    if (bridge->on_segment == nullptr) return;
+    JNIEnv * env = bridge->env;
+    const int64_t start = whisper_full_get_segment_t0(ctx, segment) * 10;
+    const int64_t end = whisper_full_get_segment_t1(ctx, segment) * 10;
+    const char * segment_text = whisper_full_get_segment_text(ctx, segment);
+    // Whisper tokens are BPE pieces (" chor" + "ando" + ","), not real
+    // words. Merge consecutive pieces into words: a leading space (or
+    // the first piece) starts a new word; everything else — including
+    // trailing punctuation — extends the current one. Without this the
+    // karaoke highlight advances mid-word ("chor" → "ando").
+    std::string words;
+    std::string current_text;
+    int64_t current_t0 = 0;
+    int64_t current_t1 = 0;
+    float current_p = 1.0f;
+    auto flush_word = [&]() {
+        if (current_text.empty()) return;
+        words += current_text;
+        words += '|';
+        words += std::to_string(current_t0);
+        words += '|';
+        words += std::to_string(current_t1);
+        words += '|';
+        words += std::to_string(current_p);
+        words += '\n';
+        current_text.clear();
+    };
+    const int token_count = whisper_full_n_tokens(ctx, segment);
+    for (int token = 0; token < token_count; ++token) {
+        const char * token_text = whisper_full_get_token_text(ctx, segment, token);
+        const whisper_token_data data = whisper_full_get_token_data(ctx, segment, token);
+        // Skip special tokens (`<|...|>`) and DTW timestamp markers
+        // (`[_BEG_]`, `[_TT_150]`) so they don't leak into the words.
+        if (token_text == nullptr || token_text[0] == '<') continue;
+        if (token_text[0] == '[' && token_text[1] == '_') continue;
+        const bool starts_word = current_text.empty() || token_text[0] == ' ';
+        if (starts_word) {
+            flush_word();
+            current_text = token_text;
+            current_t0 = data.t0 * 10;
+        } else {
+            current_text += token_text;
+        }
+        current_t1 = data.t1 * 10;
+        current_p = std::min(current_p, data.p);
+    }
+    flush_word();
+    jstring text = env->NewStringUTF(segment_text == nullptr ? "" : segment_text);
+    jstring lang = env->NewStringUTF(
+        bridge->language_name == nullptr ? "unknown" : bridge->language_name);
+    jstring word_data = env->NewStringUTF(words.c_str());
+    env->CallVoidMethod(bridge->callback, bridge->on_segment, text, start, end, lang,
+                        whisper_full_get_segment_no_speech_prob(ctx, segment), word_data);
+    env->DeleteLocalRef(text);
+    env->DeleteLocalRef(lang);
+    env->DeleteLocalRef(word_data);
+}
+
+void on_new_segment(whisper_context * ctx, whisper_state *, int n_new, void * user_data) {
+    auto * bridge = static_cast<CallbackBridge *>(user_data);
+    if (bridge == nullptr) return;
+    emit_language(bridge);
+    const int total = whisper_full_n_segments(ctx);
+    for (int i = total - n_new; i < total; ++i) {
+        emit_segment(bridge, ctx, i);
+    }
+}
+
 } // namespace
 
 extern "C" {
@@ -162,6 +255,23 @@ Java_com_karaokei_core_whisper_WhisperBridge_nativeTranscribeFile(
     params.temperature_inc = 0.0f;
     params.n_threads = std::max(1, std::min(4, (int) std::thread::hardware_concurrency()));
 
+    // Stream segments to the JVM as they are decoded instead of one
+    // burst at the end: the Kotlin layer maps each segment into
+    // transcription progress so the UI bar moves in real time.
+    jclass callback_class = env->GetObjectClass(callback);
+    CallbackBridge bridge;
+    bridge.env = env;
+    bridge.callback = callback;
+    bridge.on_language = env->GetMethodID(
+        callback_class, "onLanguageDetected", "(Ljava/lang/String;)V");
+    bridge.on_segment = env->GetMethodID(
+        callback_class, "onNativeSegment", "(Ljava/lang/String;JJLjava/lang/String;FLjava/lang/String;)V");
+    bridge.language_name = language_value.empty() || language_value == "auto"
+        ? nullptr
+        : language_value.c_str();
+    params.new_segment_callback = on_new_segment;
+    params.new_segment_callback_user_data = &bridge;
+
     const int result = whisper_full(native->context, params, samples.data(), static_cast<int>(samples.size()));
     if (result != 0) {
         call_error(env, callback, "whisper_full failed with code " + std::to_string(result));
@@ -182,54 +292,20 @@ Java_com_karaokei_core_whisper_WhisperBridge_nativeTranscribeFile(
             samples.size(), rms, n_seg, total_tokens);
     }
 
-    jclass callback_class = env->GetObjectClass(callback);
+    // Segments were already streamed through `on_new_segment` while
+    // decoding; only the terminal events remain.
     const jmethodID language_method = env->GetMethodID(
         callback_class, "onLanguageDetected", "(Ljava/lang/String;)V");
-    const jmethodID segment_method = env->GetMethodID(
-        callback_class, "onNativeSegment", "(Ljava/lang/String;JJLjava/lang/String;FLjava/lang/String;)V");
     const jmethodID completed_method = env->GetMethodID(callback_class, "onCompleted", "()V");
 
+    // Fallback for empty transcriptions: still report the language.
     const char * language_name = whisper_lang_str(whisper_full_lang_id(native->context));
-    if (language_method != nullptr && language_name != nullptr) {
+    if (language_method != nullptr && language_name != nullptr && !bridge.language_sent) {
         jstring value = env->NewStringUTF(language_name);
         env->CallVoidMethod(callback, language_method, value);
         env->DeleteLocalRef(value);
     }
 
-    const int segments = whisper_full_n_segments(native->context);
-    for (int segment = 0; segment < segments; ++segment) {
-        const int64_t start = whisper_full_get_segment_t0(native->context, segment) * 10;
-        const int64_t end = whisper_full_get_segment_t1(native->context, segment) * 10;
-        const char * segment_text = whisper_full_get_segment_text(native->context, segment);
-        std::string words;
-        const int token_count = whisper_full_n_tokens(native->context, segment);
-        for (int token = 0; token < token_count; ++token) {
-            const char * token_text = whisper_full_get_token_text(native->context, segment, token);
-            const whisper_token_data data = whisper_full_get_token_data(native->context, segment, token);
-            // Skip special tokens (`<|...|>`) and DTW timestamp markers
-            // (`[_BEG_]`, `[_TT_150]`) so they don't leak into the words.
-            if (token_text == nullptr || token_text[0] == '<') continue;
-            if (token_text[0] == '[' && token_text[1] == '_') continue;
-            words += token_text;
-            words += '|';
-            words += std::to_string(data.t0 * 10);
-            words += '|';
-            words += std::to_string(data.t1 * 10);
-            words += '|';
-            words += std::to_string(data.p);
-            words += '\n';
-        }
-        if (segment_method != nullptr) {
-            jstring text = env->NewStringUTF(segment_text == nullptr ? "" : segment_text);
-            jstring lang = env->NewStringUTF(language_name == nullptr ? "unknown" : language_name);
-            jstring word_data = env->NewStringUTF(words.c_str());
-            env->CallVoidMethod(callback, segment_method, text, start, end, lang,
-                                whisper_full_get_segment_no_speech_prob(native->context, segment), word_data);
-            env->DeleteLocalRef(text);
-            env->DeleteLocalRef(lang);
-            env->DeleteLocalRef(word_data);
-        }
-    }
     if (completed_method != nullptr) env->CallVoidMethod(callback, completed_method);
     env->DeleteLocalRef(callback_class);
     return 0;

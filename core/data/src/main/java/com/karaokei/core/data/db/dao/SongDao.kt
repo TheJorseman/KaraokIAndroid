@@ -29,6 +29,16 @@ interface SongDao {
     @Query("UPDATE songs SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: SongStatus)
 
+    /**
+     * Clears transient processing statuses left behind when the
+     * process dies mid-pipeline (a crash leaves songs stuck at
+     * "Separando voz…" forever). Safe to run at cold start, before
+     * any pipeline is running.
+     */
+    @Query("UPDATE songs SET status = 'IMPORTED' " +
+        "WHERE status IN ('SEPARATING', 'TRANSCRIBING', 'ALIGNING')")
+    suspend fun resetTransientStatuses()
+
     @Query("DELETE FROM songs WHERE id = :id")
     suspend fun deleteById(id: String)
 }

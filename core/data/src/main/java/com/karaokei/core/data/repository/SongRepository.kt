@@ -25,7 +25,17 @@ class SongRepository @Inject constructor(
     suspend fun import(uri: android.net.Uri): AppResult<ImportedSong> {
         return when (val result = importer.import(uri)) {
             is AppResult.Success -> {
-                songDao.upsert(result.value.entity)
+                // Re-imports are idempotent (the id is the content
+                // hash): keep the existing processing state instead of
+                // resetting a READY song to IMPORTED every cold start.
+                val existing = songDao.findById(result.value.entity.id)
+                songDao.upsert(
+                    if (existing == null) result.value.entity
+                    else result.value.entity.copy(
+                        status = existing.status,
+                        createdAt = existing.createdAt,
+                    ),
+                )
                 result
             }
             is AppResult.Failure -> result

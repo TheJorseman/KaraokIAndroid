@@ -2,7 +2,10 @@ package com.karaokei.android.navigation
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -83,6 +86,7 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
         PipelineProgressBanner(
             state = pipelineState,
             onCancel = rootViewModel::cancelPipeline,
+            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
         )
         Box(modifier = Modifier.fillMaxSize()) {
             NavHost(navController = navController, startDestination = startDestination) {
@@ -128,7 +132,10 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                     arguments = listOf(navArgument("songId") { type = NavType.StringType }),
                 ) { entry ->
                     val songId = entry.arguments?.getString("songId").orEmpty()
-                    KaraokePlayerScreen(songId = songId)
+                    KaraokePlayerScreen(
+                        songId = songId,
+                        onBack = { navController.popBackStack() },
+                    )
                 }
                 composable(Routes.MODEL_MANAGER) {
                     ModelManagerScreen(onClose = { navController.popBackStack() })
