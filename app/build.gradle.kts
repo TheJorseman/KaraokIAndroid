@@ -77,7 +77,11 @@ android {
             )
         }
         jniLibs {
-            useLegacyPackaging = false
+            // Extract .so files to nativeLibraryDir instead of
+            // direct-loading from the APK: the QNN HTP backend loads
+            // the Hexagon skel through FastRPC, which needs real files
+            // on disk (resolved via ADSP_LIBRARY_PATH).
+            useLegacyPackaging = true
         }
     }
 
@@ -143,7 +147,7 @@ dependencies {
     // en docs/post-mvp.md. Los extractores nativos cubren los formatos MVP.
 
     // ONNX Runtime (T3.1)
-    implementation(libs.onnxruntime.android)
+    implementation(libs.onnxruntime.android.qnn)
 
     // Desugaring
     coreLibraryDesugaring(libs.android.desugar.jdk.libs)

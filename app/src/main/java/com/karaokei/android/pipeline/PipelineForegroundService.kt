@@ -54,6 +54,7 @@ class PipelineForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        val force = intent.getBooleanExtra(EXTRA_FORCE_REPROCESS, false)
         // Always re-launch the orchestrator (even if the same song
         // ID is already running). `PipelineOrchestrator.runAsync`
         // cancels the active job before launching a new one, so the
@@ -76,7 +77,7 @@ class PipelineForegroundService : Service() {
                 }
             }
         }
-        orchestrator.runAsync(songId)
+        orchestrator.runAsync(songId, force = force)
         return START_STICKY
     }
 
@@ -175,6 +176,7 @@ class PipelineForegroundService : Service() {
         const val CHANNEL_ID: String = "pipeline_progress"
         const val NOTIFICATION_ID: Int = 0x1A03
         const val EXTRA_SONG_ID: String = "song_id"
+        const val EXTRA_FORCE_REPROCESS: String = "force_reprocess"
         const val ACTION_CANCEL: String = "com.karaokei.android.pipeline.CANCEL"
 
         /**
@@ -184,11 +186,12 @@ class PipelineForegroundService : Service() {
          * pipeline still runs in-process instead of crashing the app.
          */
         @Volatile
-        var inProcessFallback: ((String) -> Unit)? = null
+        var inProcessFallback: ((String, Boolean) -> Unit)? = null
 
-        fun start(context: Context, songId: String) {
+        fun start(context: Context, songId: String, forceReprocess: Boolean = false) {
             val intent = Intent(context, PipelineForegroundService::class.java)
                 .putExtra(EXTRA_SONG_ID, songId)
+                .putExtra(EXTRA_FORCE_REPROCESS, forceReprocess)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -203,7 +206,7 @@ class PipelineForegroundService : Service() {
                 )
                 val fallback = inProcessFallback
                 if (fallback != null) {
-                    fallback(songId)
+                    fallback(songId, forceReprocess)
                 } else {
                     Log.e(TAG, "no in-process fallback registered; pipeline not started")
                 }

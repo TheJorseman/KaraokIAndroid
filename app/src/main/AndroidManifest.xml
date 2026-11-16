@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- The QNN plugin EP declares minSdk 27; it is only dlopen-ed on
+         Qualcomm devices at runtime (guarded by try/catch + CPU
+         fallback), so keeping minSdk 26 is safe. -->
+    <uses-sdk tools:overrideLibrary="ai.onnxruntime.qnnpluginep" />
+
     <!-- Permissions: se irán añadiendo en sus tickets respectivos. -->
 
     <!-- T1.3: Importación de archivos locales vía SAF. No requiere permiso runtime. -->

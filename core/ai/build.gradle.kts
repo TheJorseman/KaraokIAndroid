@@ -22,8 +22,12 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
 
-    // ONNX Runtime
-    api(libs.onnxruntime.android)
+    // ONNX Runtime with the QNN EP compiled in (drop-in superset of
+    // onnxruntime-android; exposes SessionOptions.addQnn()). The QNN
+    // backend runtime ships the Hexagon libs and is optional at
+    // runtime — without it addQnn() falls back to the CPU EP.
+    api(libs.onnxruntime.android.qnn)
+    api(libs.qnn.runtime)
 
     // Hilt
     implementation(libs.hilt.android)

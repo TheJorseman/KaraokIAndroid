@@ -42,9 +42,60 @@ object OrtSessionFactory {
         XNNPACK, // CPU only, XNNPACK-optimised
         CPU,     // CPU only, plain ORT CPU EP
         NNAPI,   // NNAPI only (falls back to CPU for unsupported nodes)
+        QNN,     // Qualcomm QNN plugin EP (Hexagon NPU via libQnnHtp.so)
     }
 
     @Volatile var activeBackend: Backend = Backend.AUTO
+
+    // ------------------------------------------------------------------
+    // QNN (Qualcomm Hexagon NPU). The ORT build with the QNN EP ships
+    // as `onnxruntime-android-qnn`; the HTP backend libs come from
+    // `com.qualcomm.qti:qnn-runtime`. Without either (or on
+    // non-Qualcomm devices) addQnn() throws and we fall back to the
+    // CPU EP.
+    // ------------------------------------------------------------------
+
+    /**
+     * HTP architecture for the current SoC (SM8650 = HTP v75). The
+     * numeric arch is the documented, portable identifier; letting the
+     * stack guess has produced `QNN_DEVICE_ERROR_INVALID_CONFIG` at
+     * device creation on SM8650.
+     */
+    private fun qnnHtpArch(): String {
+        val soc = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            android.os.Build.SOC_MODEL.orEmpty()
+        } else {
+            ""
+        }.uppercase()
+        return when {
+            "SM8750" in soc -> "79"
+            "SM8650" in soc -> "75"
+            "SM8550" in soc -> "73"
+            "SM8475" in soc -> "73"
+            "SM8450" in soc -> "69"
+            else -> "75"
+        }
+    }
+
+    private fun addQnnProvider(options: OrtSession.SessionOptions): Boolean {
+        return try {
+            options.addQnn(
+                mapOf(
+                    "backend_type" to "htp",
+                    "htp_performance_mode" to "burst",
+                    "htp_arch" to qnnHtpArch(),
+                ),
+            )
+            android.util.Log.i("OrtSessionFactory", "QNN HTP backend attached (arch=${qnnHtpArch()})")
+            true
+        } catch (t: Throwable) {
+            android.util.Log.w(
+                "OrtSessionFactory",
+                "QNN backend unavailable (${t.message}); falling back to CPU EP",
+            )
+            false
+        }
+    }
 
     /**
      * Intra-op thread count. Historically fixed at 2 to cap the peak
@@ -108,6 +159,10 @@ object OrtSessionFactory {
                 Backend.XNNPACK -> listOf("XNNPACK")
                 Backend.CPU -> listOf("CPU")
                 Backend.NNAPI -> listOf("NNAPI")
+                Backend.QNN -> emptyList() // attached below via EP devices
+            }
+            if (backend == Backend.QNN && !addQnnProvider(options)) {
+                android.util.Log.w("OrtSessionFactory", "QNN backend unavailable; falling back to CPU EP")
             }
             backends.forEach { providerName ->
                 try {

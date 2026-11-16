@@ -30,6 +30,8 @@ media3 = "1.5.0"
 
 # AI
 onnxruntime = "1.28.0"
+# QNN runtime (libQnnHtp.so + Hexagon stubs/skels).
+qnnRuntime = "2.42.0"
 
 # Test
 junit4 = "4.13.2"
@@ -106,6 +108,11 @@ androidx-media3-decoder-ffmpeg = { group = "androidx.media3", name = "media3-dec
 
 # ONNX Runtime
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+# Full ORT build with the QNN EP compiled in (drop-in replacement for
+# onnxruntime-android; exposes SessionOptions.addQnn()).
+onnxruntime-android-qnn = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android-qnn", version.ref = "onnxruntime" }
+# QNN backend runtime: libQnnHtp.so + Hexagon stubs/skels.
+qnn-runtime = { group = "com.qualcomm.qti", name = "qnn-runtime", version.ref = "qnnRuntime" }
 
 # Desugaring
 android-desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs", version.ref = "desugar" }

@@ -56,9 +56,12 @@ class PipelineOrchestrator @Inject constructor(
     /**
      * Runs the pipeline for [songId]. If `karaoke.json` is already
      * on disk, returns immediately. Otherwise, runs whichever stages
-     * are missing in order.
+     * are missing in order. With [force] the cache is invalidated
+     * first so "Procesar / reprocesar" redoes every stage even when a
+     * (possibly stale) `karaoke.json` exists — otherwise the tap
+     * silently does nothing.
      */
-    suspend fun run(songId: String): AppResult<Unit> = mutex.withLock {
+    suspend fun run(songId: String, force: Boolean = false): AppResult<Unit> = mutex.withLock {
         val testFixture = songDao.findById(songId)?.fileUri?.endsWith("karaokei-test-audio.wav") == true
         _state.update {
             it.copy(
@@ -70,6 +73,10 @@ class PipelineOrchestrator @Inject constructor(
             )
         }
         try {
+            if (force) {
+                cacheLayout.deleteAll(songId)
+                cacheDao.deleteForSong(songId)
+            }
             if (cacheLayout.hasKaraoke(songId)) {
                 _state.update { it.copy(stage = PipelineStageName.DONE, progress = 100) }
                 return@withLock AppResult.Success(Unit)
@@ -147,11 +154,11 @@ class PipelineOrchestrator @Inject constructor(
         }
     }
 
-    fun runAsync(songId: String) {
+    fun runAsync(songId: String, force: Boolean = false) {
         activeJob?.cancel()
         activeJob = scope.launch {
             try {
-                run(songId)
+                run(songId, force)
             } catch (_: CancellationException) {
                 // Cancellation is signalled through [state], not as a failure.
             }

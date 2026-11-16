@@ -103,7 +103,9 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                     LibraryScreen(
                         onSongClick = { songId -> navController.navigate(Routes.detail(songId)) },
                         onPickFile = { navController.navigate(Routes.IMPORT) },
-                        onProcess = { songId -> PipelineForegroundService.start(context, songId) },
+                        onProcess = { songId ->
+                            PipelineForegroundService.start(context, songId, forceReprocess = true)
+                        },
                         onOpenModelManager = { navController.navigate(Routes.MODEL_MANAGER) },
                     )
                 }
@@ -124,7 +126,9 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                     SongDetailScreen(
                         songId = songId,
                         onPlay = { navController.navigate(Routes.player(songId)) },
-                        onProcess = { PipelineForegroundService.start(context, songId) },
+                        onProcess = {
+                            PipelineForegroundService.start(context, songId, forceReprocess = true)
+                        },
                     )
                 }
                 composable(
