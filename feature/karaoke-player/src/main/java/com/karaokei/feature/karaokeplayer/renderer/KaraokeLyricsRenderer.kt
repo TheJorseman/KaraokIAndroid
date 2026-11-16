@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -13,6 +12,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
@@ -24,24 +24,13 @@ import com.karaokei.feature.karaoke.engine.KaraokeState
 /**
  * Compose Canvas renderer for the karaoke lyrics.
  *
- * Layout (vertical stack, top to bottom):
- *  - One previous line above the active line (faded, smaller).
- *  - The active line, centred vertically, large, with per-word
- *    progressive illumination.
- *  - One next line below (faded, smaller).
- *
- * Active line drawing:
- *  1. Draw the whole line in the "upcoming" colour so the reader
- *     sees the shape of the upcoming text.
- *  2. For each word whose start time is in the past, redraw it in
- *     the "active" colour. For the word currently being sung
- *     (state.wordIndex), draw a horizontal gradient that reveals it
- *     from the left up to wordProgress.
- *  3. Words not yet reached stay in the upcoming colour.
- *
- * Per-word measurement avoids the coarse "widthPerChar" estimate
- * the previous version used, which made the highlight drift when a
- * line mixed narrow and wide glyphs.
+ * Layout (vertical stack, centred on the active block):
+ *  - Up to two previous lines above (fading out with distance).
+ *  - The active line, large, with per-word progressive illumination.
+ *    Lines wider than the screen wrap to a second row at the same
+ *    font size (shrinking to a readable floor first) instead of
+ *    squeezing everything into one clipped row.
+ *  - Up to two next lines below (fading out with distance).
  */
 @Composable
 fun KaraokeLyricsRenderer(
@@ -53,132 +42,196 @@ fun KaraokeLyricsRenderer(
         when (state) {
             is KaraokeState.Idle -> Unit
             is KaraokeState.Active -> drawActive(state, measurer)
+            is KaraokeState.Upcoming -> drawUpcoming(state, measurer)
         }
     }
 }
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawUpcoming(
+    state: KaraokeState.Upcoming,
+    measurer: TextMeasurer,
+) {
+    val maxWidth = size.width * 0.92f
+    val centerY = size.height * 0.52f
+    var style = baseStyle(ACTIVE_FONT, FontWeight.Bold)
+    var rows = wrapWords(state.nextLine.words, measurer, style, maxWidth)
+    if (rows.size > MAX_ACTIVE_ROWS) {
+        style = baseStyle(ACTIVE_FONT_MIN, FontWeight.Bold)
+        rows = wrapWords(state.nextLine.words, measurer, style, maxWidth)
+    }
+    val lineHeight = style.fontSize.toPx() * 1.35f
+    val blockHeight = rows.size * lineHeight
+    val topY = centerY - blockHeight / 2f
+
+    // The upcoming line is dimmed — nothing has been sung yet.
+    val dim = KaraokePalette.LyricUpcoming
+    for ((r, row) in rows.withIndex()) {
+        val gap = measurer.measure(" ", style).size.width.toFloat()
+        val count = row.to - row.from
+        val widths = FloatArray(count) { i -> measurer.measure(state.nextLine.words[row.from + i].text, style).size.width.toFloat() }
+        val rowWidth = widths.sum() + gap * (count - 1).coerceAtLeast(0)
+        var x = ((size.width - rowWidth) / 2f).coerceAtLeast(0f)
+        for (i in 0 until count) {
+            val text = state.nextLine.words[row.from + i].text
+            drawText(measurer.measure(text, style), color = dim, topLeft = Offset(x, topY + r * lineHeight))
+            x += widths[i] + gap
+        }
+    }
+    state.nextLine2?.let { nxt ->
+        drawCenteredLine(
+            nxt,
+            measurer,
+            baseStyle(CONTEXT_FONT, FontWeight.Normal),
+            topY + blockHeight + 28f,
+            KaraokePalette.LyricUpcoming.copy(alpha = 0.45f),
+        )
+    }
+}
+
+private const val MAX_ACTIVE_ROWS = 2
+private val ACTIVE_FONT = 34.sp
+private val ACTIVE_FONT_MIN = 22.sp
+private val CONTEXT_FONT = 20.sp
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActive(
     state: KaraokeState.Active,
     measurer: TextMeasurer,
 ) {
-    val centerY = size.height * 0.55f
-    val activeStyle = baseStyle(36.sp)
-    val fadedStyle = baseStyle(22.sp)
+    val maxWidth = size.width * 0.92f
+    val centerY = size.height * 0.52f
 
-    // Spacing derived from the font size: fixed pixel offsets overlap
-    // on high-density screens where 36 sp is ~95 px tall.
-    val activeHalfHeight = activeStyle.fontSize.toPx() * 0.9f
-    state.previousLine?.let { prev ->
-        drawCenteredLine(prev, measurer, fadedStyle, centerY - activeHalfHeight - 24f, KaraokePalette.LyricPast)
+    // ---- active block: pick the largest font that fits the wrap budget
+    var activeStyle = baseStyle(ACTIVE_FONT, FontWeight.Bold)
+    var rows = wrapWords(state.line.words, measurer, activeStyle, maxWidth)
+    if (rows.size > MAX_ACTIVE_ROWS) {
+        activeStyle = baseStyle(ACTIVE_FONT_MIN, FontWeight.Bold)
+        rows = wrapWords(state.line.words, measurer, activeStyle, maxWidth)
     }
-    drawActiveLine(state, measurer, activeStyle, centerY)
-    state.nextLine?.let { nxt ->
-        drawCenteredLine(nxt, measurer, fadedStyle, centerY + activeHalfHeight + 24f, KaraokePalette.LyricUpcoming)
+    val lineHeight = activeStyle.fontSize.toPx() * 1.35f
+    val blockHeight = rows.size * lineHeight
+
+    // ---- context lines
+    val contextStyle = baseStyle(CONTEXT_FONT, FontWeight.Normal)
+    val contextLineHeight = contextStyle.fontSize.toPx() * 1.45f
+    val above = listOfNotNull(state.previousLine2, state.previousLine)
+    val below = listOfNotNull(state.nextLine, state.nextLine2)
+
+    var y = centerY - blockHeight / 2f - contextLineHeight * above.size - 28f
+    above.forEachIndexed { index, line ->
+        // The closer to the active line, the brighter.
+        val t = (index + 1f) / (above.size + 1f)
+        drawCenteredLine(line, measurer, contextStyle, y, KaraokePalette.LyricPast.copy(alpha = 0.35f + 0.5f * t))
+        y += contextLineHeight
+    }
+    y += 28f
+
+    drawActiveRows(state, rows, measurer, activeStyle, y, lineHeight)
+    y += blockHeight + 28f
+
+    below.forEachIndexed { index, line ->
+        val t = 1f - index.toFloat() / (below.size + 1f)
+        drawCenteredLine(line, measurer, contextStyle, y, KaraokePalette.LyricUpcoming.copy(alpha = 0.35f + 0.5f * t))
+        y += contextLineHeight
     }
 }
 
-private fun baseStyle(size: TextUnit): TextStyle = TextStyle(
+private fun baseStyle(size: TextUnit, weight: FontWeight): TextStyle = TextStyle(
     fontSize = size,
+    fontWeight = weight,
     textAlign = TextAlign.Center,
     color = Color.White,
     shadow = Shadow(
-        color = Color.Black.copy(alpha = 0.7f),
+        color = Color.Black.copy(alpha = 0.75f),
         offset = Offset(0f, 2f),
-        blurRadius = 6f,
+        blurRadius = 8f,
     ),
 )
 
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCenteredLine(
-    line: KaraokeLine,
+/** A wrapped row: a slice of word indices that fit within [maxWidth]. */
+private class WordRow(val from: Int, val to: Int)
+
+private fun wrapWords(
+    words: List<com.karaokei.feature.karaoke.engine.KaraokeWord>,
     measurer: TextMeasurer,
     style: TextStyle,
-    centerY: Float,
-    color: Color,
-) {
-    val text = line.words.joinToString(" ") { it.text }
-    var result: TextLayoutResult = measurer.measure(text, style)
-    // Long lines overflow the canvas; shrink to fit so they stay
-    // centered and readable instead of running off both edges.
-    val maxWidth = size.width * 0.92f
-    if (result.size.width > maxWidth && result.size.width > 0) {
-        val scaled = style.copy(fontSize = style.fontSize * (maxWidth / result.size.width))
-        result = measurer.measure(text, scaled)
+    maxWidth: Float,
+): List<WordRow> {
+    if (words.isEmpty()) return emptyList()
+    val gap = measurer.measure(" ", style).size.width.toFloat()
+    val rows = ArrayList<WordRow>()
+    var from = 0
+    var width = 0f
+    for (i in words.indices) {
+        val w = measurer.measure(words[i].text, style).size.width.toFloat()
+        val projected = if (i == from) w else width + gap + w
+        if (projected > maxWidth && i > from) {
+            rows.add(WordRow(from, i))
+            from = i
+            width = w
+        } else {
+            width = projected
+        }
     }
-    val left = ((size.width - result.size.width) / 2f).coerceAtLeast(0f)
-    val top = centerY - result.size.height / 2f
-    drawText(result, color = color, topLeft = Offset(left, top))
+    rows.add(WordRow(from, words.size))
+    return rows
 }
 
-/**
- * Draw the active line with per-word illumination.
- *
- * Each word is laid out separately against the shared text baseline so
- * the highlight ends exactly at the current word's right edge. The
- * current word gets a horizontal gradient that reveals `wordProgress`
- * of its width. Lines wider than the canvas are auto-shrunk to fit —
- * otherwise the trailing words draw past the right edge and the
- * text-measuring `drawText` builds negative width constraints
- * ("maxWidth(-2) must be >= than minWidth(0)").
- */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveLine(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveRows(
     state: KaraokeState.Active,
+    rows: List<WordRow>,
     measurer: TextMeasurer,
-    baseStyle: TextStyle,
-    centerY: Float,
+    style: TextStyle,
+    topY: Float,
+    lineHeight: Float,
 ) {
-    val words = state.line.words
-    if (words.isEmpty()) return
+    val gap = measurer.measure(" ", style).size.width.toFloat()
+    for ((r, row) in rows.withIndex()) {
+        val count = row.to - row.from
+        val widths = FloatArray(count) { i ->
+            measurer.measure(words(state, row.from + i), style).size.width.toFloat()
+        }
+        val rowWidth = widths.sum() + gap * (count - 1).coerceAtLeast(0)
+        val startX = ((size.width - rowWidth) / 2f).coerceAtLeast(0f)
+        val baselineY = topY + r * lineHeight
 
-    // Auto-fit: measure at the natural size first, then scale the font
-    // down when the line is wider than the canvas.
-    val maxTextWidth = size.width * 0.92f
-    var style = baseStyle
-    var wordGap = measurer.measure(" ", style).size.width.toFloat()
-    var widths = FloatArray(words.size) { i -> measurer.measure(words[i].text, style).size.width.toFloat() }
-    var totalWidth = widths.sum() + wordGap * (words.size - 1)
-    if (totalWidth > maxTextWidth && totalWidth > 0f) {
-        val scale = (maxTextWidth / totalWidth).coerceIn(0.3f, 1f)
-        style = baseStyle.copy(fontSize = baseStyle.fontSize * scale)
-        wordGap = measurer.measure(" ", style).size.width.toFloat()
-        widths = FloatArray(words.size) { i -> measurer.measure(words[i].text, style).size.width.toFloat() }
-        totalWidth = widths.sum() + wordGap * (words.size - 1)
+        var x = startX
+        for (i in 0 until count) {
+            val wordIndex = row.from + i
+            drawWord(state, wordIndex, measurer, style, x, baselineY, widths[i])
+            x += widths[i] + gap
+        }
     }
+}
 
-    val startX = ((size.width - totalWidth) / 2f).coerceAtLeast(0f)
-    val baselineY = centerY - style.fontSize.toPx() / 2f * 0.8f
+private fun words(state: KaraokeState.Active, index: Int): String =
+    state.line.words.getOrNull(index)?.text ?: ""
 
-    // Pass 1 — upcoming text (faded white).
-    for (i in words.indices) {
-        val left = wordLeft(startX, widths, wordGap, i)
-        val result = measurer.measure(words[i].text, style)
-        drawText(result, color = KaraokePalette.LyricUpcoming, topLeft = Offset(left, baselineY))
-    }
-
-    // Pass 2 — fully-sung words in solid active colour.
-    val sungUpTo = state.wordIndex
-    for (i in 0 until sungUpTo) {
-        if (i >= words.size) break
-        val left = wordLeft(startX, widths, wordGap, i)
-        val result = measurer.measure(words[i].text, style)
-        drawText(result, color = KaraokePalette.LyricActive, topLeft = Offset(left, baselineY))
-    }
-
-    // Pass 3 — current word with horizontal gradient up to wordProgress.
-    // The brush stops at `reveal` and turns transparent so the
-    // upcoming text drawn in Pass 1 stays visible on the right.
-    if (sungUpTo in words.indices) {
-        val i = sungUpTo
-        val left = wordLeft(startX, widths, wordGap, i)
-        val result = measurer.measure(words[i].text, style)
-        val wordWidth = result.size.width.toFloat()
-        val reveal = (wordWidth * state.wordProgress.coerceIn(0f, 1f)).toFloat()
-        if (reveal > 0f && wordWidth > 0f) {
-            val revealStop = (reveal / wordWidth).coerceIn(0f, 1f)
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawWord(
+    state: KaraokeState.Active,
+    wordIndex: Int,
+    measurer: TextMeasurer,
+    style: TextStyle,
+    left: Float,
+    top: Float,
+    width: Float,
+) {
+    val text = words(state, wordIndex)
+    when {
+        wordIndex < state.wordIndex ->
+            drawText(measurer.measure(text, style), color = KaraokePalette.LyricActive, topLeft = Offset(left, top))
+        wordIndex == state.wordIndex -> {
+            val result = measurer.measure(text, style)
+            val reveal = (width * state.wordProgress.coerceIn(0f, 1f))
+            if (reveal <= 0f || width <= 0f) {
+                drawText(result, color = KaraokePalette.LyricUpcoming, topLeft = Offset(left, top))
+                return
+            }
+            val revealStop = (reveal / width).coerceIn(0f, 1f)
             val brush = if (revealStop >= 1f) {
                 Brush.horizontalGradient(
                     colors = listOf(KaraokePalette.LyricActive, KaraokePalette.HighlightPrimary),
                     startX = left,
-                    endX = left + wordWidth,
+                    endX = left + width,
                 )
             } else {
                 Brush.horizontalGradient(
@@ -189,25 +242,36 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActiveLine(
                         1f to Color.Transparent,
                     ),
                     startX = left,
-                    endX = left + wordWidth,
+                    endX = left + width,
                 )
             }
             drawText(
                 textMeasurer = measurer,
-                text = words[i].text,
+                text = text,
                 style = style.copy(brush = brush),
-                topLeft = Offset(left, baselineY),
+                topLeft = Offset(left, top),
             )
         }
+        else ->
+            drawText(measurer.measure(text, style), color = KaraokePalette.LyricUpcoming, topLeft = Offset(left, top))
     }
 }
 
-/**
- * Compute the left X for word `i` given the cumulative widths and the
- * inter-word gap. Avoids allocating a running list per frame.
- */
-private fun wordLeft(startX: Float, widths: FloatArray, wordGap: Float, i: Int): Float {
-    var x = startX
-    for (j in 0 until i) x += widths[j] + wordGap
-    return x
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCenteredLine(
+    line: KaraokeLine,
+    measurer: TextMeasurer,
+    style: TextStyle,
+    centerY: Float,
+    color: Color,
+) {
+    val text = line.words.joinToString(" ") { it.text }
+    var result: TextLayoutResult = measurer.measure(text, style)
+    val maxWidth = size.width * 0.92f
+    if (result.size.width > maxWidth && result.size.width > 0) {
+        val scaled = style.copy(fontSize = style.fontSize * (maxWidth / result.size.width))
+        result = measurer.measure(text, scaled)
+    }
+    val left = ((size.width - result.size.width) / 2f).coerceAtLeast(0f)
+    val top = centerY - result.size.height / 2f
+    drawText(result, color = color, topLeft = Offset(left, top))
 }

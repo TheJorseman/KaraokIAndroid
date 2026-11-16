@@ -38,6 +38,8 @@ object KaraokeLineBuilder {
         val lines = transcript.segments
             .filterNot { NOISE_SEGMENT.matches(it.text.trim()) }
             .flatMap { segment -> linesFor(segment) }
+            .mapNotNull { it.normalized() }
+            .filterConsecutiveDuplicates()
         return KaraokeDocument(
             songId = transcript.songId,
             language = transcript.language,
@@ -45,6 +47,39 @@ object KaraokeLineBuilder {
             lines = lines,
         )
     }
+
+    /**
+     * Display cleanup for one line: trim/collapse word whitespace,
+     * drop symbol-only lines ("♪", "…"), and capitalize the first
+     * letter so lines read like lyrics instead of raw decoder output.
+     */
+    private fun KaraokeLine.normalized(): KaraokeLine? {
+        val words = words.mapNotNull { w ->
+            val clean = w.text.replace(WHITESPACE, " ").trim()
+            if (clean.isEmpty()) null else w.copy(text = clean)
+        }
+        if (words.isEmpty()) return null
+        if (words.all { w -> w.text.none { it.isLetterOrDigit() } }) return null
+        val first = words.first()
+        val capitalized = first.copy(
+            text = first.text.replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase() else ch.toString()
+            },
+        )
+        return copy(words = listOf(capitalized) + words.drop(1))
+    }
+
+    /** Whisper occasionally repeats an identical line back to back. */
+    private fun List<KaraokeLine>.filterConsecutiveDuplicates(): List<KaraokeLine> =
+        fold(mutableListOf<KaraokeLine>()) { acc, line ->
+            val sameAsPrevious = acc.lastOrNull()?.let {
+                it.words.map(KaraokeWord::text) == line.words.map(KaraokeWord::text)
+            } == true
+            if (!sameAsPrevious) acc.add(line)
+            acc
+        }
+
+    private val WHITESPACE = Regex("\\s+")
 
     private fun linesFor(segment: TranscriptSegment): List<KaraokeLine> {
         if (segment.words.isEmpty()) {

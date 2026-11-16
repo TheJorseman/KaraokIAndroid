@@ -30,7 +30,7 @@ class KaraokeLineBuilderTest {
         )
         val out = KaraokeLineBuilder.build(transcript)
         assertThat(out.lines).hasSize(1)
-        assertThat(out.lines[0].words.map { it.text }).containsExactly("hello", "world").inOrder()
+        assertThat(out.lines[0].words.map { it.text }).containsExactly("Hello", "world").inOrder()
     }
 
     @Test fun `long segment is split at marker or target size`() {
@@ -79,7 +79,7 @@ class KaraokeLineBuilderTest {
         )
         val out = KaraokeLineBuilder.build(transcript)
         assertThat(out.lines).hasSize(1)
-        assertThat(out.lines[0].words.map { it.text }).containsExactly("hola cariño")
+        assertThat(out.lines[0].words.map { it.text }).containsExactly("Hola cariño")
     }
 
     @Test fun `lyrics containing the word musica are kept`() {
@@ -99,5 +99,59 @@ class KaraokeLineBuilderTest {
         )
         val out = KaraokeLineBuilder.build(transcript)
         assertThat(out.lines).hasSize(1)
+    }
+
+    @Test fun `words are trimmed and the line is capitalized`() {
+        val transcript = com.karaokei.core.common.transcript.TranscriptDocument(
+            songId = "x",
+            language = "es",
+            duration = 10.0,
+            modelId = "m",
+            segments = listOf(
+                com.karaokei.core.common.transcript.TranscriptSegment(
+                    start = 0.0,
+                    end = 9.0,
+                    text = "hola cariño",
+                    words = listOf(word("  hola", 0.0, 2.0), word("cariño  ", 2.0, 9.0)),
+                ),
+            ),
+        )
+        val out = KaraokeLineBuilder.build(transcript)
+        assertThat(out.lines[0].words.map { it.text }).containsExactly("Hola", "cariño").inOrder()
+    }
+
+    @Test fun `symbol-only lines are dropped`() {
+        fun seg(text: String, start: Double, end: Double) =
+            com.karaokei.core.common.transcript.TranscriptSegment(
+                start = start, end = end, text = text,
+                words = listOf(word(text, start, end)),
+            )
+        val transcript = com.karaokei.core.common.transcript.TranscriptDocument(
+            songId = "x",
+            language = "es",
+            duration = 20.0,
+            modelId = "m",
+            segments = listOf(seg("♪ ♪", 0.0, 2.0), seg("…", 2.0, 3.0), seg("hola", 5.0, 9.0)),
+        )
+        val out = KaraokeLineBuilder.build(transcript)
+        assertThat(out.lines).hasSize(1)
+        assertThat(out.lines[0].words.map { it.text }).containsExactly("Hola")
+    }
+
+    @Test fun `consecutive duplicate lines are collapsed`() {
+        fun seg(text: String, start: Double, end: Double) =
+            com.karaokei.core.common.transcript.TranscriptSegment(
+                start = start, end = end, text = text,
+                words = listOf(word(text, start, end)),
+            )
+        val transcript = com.karaokei.core.common.transcript.TranscriptDocument(
+            songId = "x",
+            language = "es",
+            duration = 20.0,
+            modelId = "m",
+            segments = listOf(seg("hola", 0.0, 2.0), seg("hola", 2.0, 4.0), seg("adios", 5.0, 9.0)),
+        )
+        val out = KaraokeLineBuilder.build(transcript)
+        assertThat(out.lines.map { it.words.first().text }).containsExactly("Hola", "Adios").inOrder()
     }
 }

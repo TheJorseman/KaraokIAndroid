@@ -46,7 +46,7 @@ class KaraokeEngine(
 
     private fun snapshotFor(positionMs: Long): KaraokeState {
         return when (val pos = resolver.resolve(positionMs)) {
-            is KaraokePositionResolver.Position.None -> KaraokeState.Idle
+            is KaraokePositionResolver.Position.None -> upcomingState(positionMs)
             is KaraokePositionResolver.Position.At -> {
                 val line = document.lines[pos.line]
                 KaraokeState.Active(
@@ -55,16 +55,39 @@ class KaraokeEngine(
                     wordProgress = pos.wordProgress,
                     line = line,
                     previousLine = document.lines.getOrNull(pos.line - 1),
+                    previousLine2 = document.lines.getOrNull(pos.line - 2),
                     nextLine = document.lines.getOrNull(pos.line + 1),
+                    nextLine2 = document.lines.getOrNull(pos.line + 2),
                     lineProgress = computeLineProgress(line, positionMs),
                 )
             }
         }
     }
+
+    /**
+     * During instrumental gaps the position falls outside every line;
+     * instead of a blank screen, preview the upcoming line so the
+     * singer knows what comes next.
+     */
+    private fun upcomingState(positionMs: Long): KaraokeState {
+        val positionSeconds = positionMs / 1000.0
+        val nextIndex = document.lines.indexOfFirst { it.start > positionSeconds }
+        if (nextIndex < 0) return KaraokeState.Idle
+        return KaraokeState.Upcoming(
+            nextLine = document.lines[nextIndex],
+            nextLine2 = document.lines.getOrNull(nextIndex + 1),
+        )
+    }
 }
 
 sealed interface KaraokeState {
     data object Idle : KaraokeState
+
+    /** Instrumental gap: the next line is shown as a preview. */
+    data class Upcoming(
+        val nextLine: KaraokeLine,
+        val nextLine2: KaraokeLine? = null,
+    ) : KaraokeState
     data class Active(
         val lineIndex: Int,
         val wordIndex: Int,
@@ -72,6 +95,8 @@ sealed interface KaraokeState {
         val lineProgress: Float,
         val line: KaraokeLine,
         val previousLine: KaraokeLine? = null,
+        val previousLine2: KaraokeLine? = null,
         val nextLine: KaraokeLine? = null,
+        val nextLine2: KaraokeLine? = null,
     ) : KaraokeState
 }
