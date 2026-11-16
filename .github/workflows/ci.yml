@@ -29,11 +29,25 @@ jobs:
       - name: Build and test
         run: |
           chmod +x ./gradlew
+          set -o pipefail
           ./gradlew :app:assembleDebug \
             :core:ai:testDebugUnitTest \
             :core:media:testDebugUnitTest \
             :feature:separation:testDebugUnitTest \
-            :feature:karaoke-engine:test
+            :feature:karaoke-engine:test 2>&1 | tee build-log.txt
+
+      - name: Report failure details
+        if: failure()
+        run: |
+          {
+            echo "## Build failure"
+            echo '```'
+            tail -n 60 build-log.txt 2>/dev/null || echo "(no log captured)"
+            echo '```'
+            echo "- free mem: $(free -m | awk '/Mem:/ {print $7}') MB"
+            echo "- java: $(java -version 2>&1 | head -1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 build-log.txt 2>/dev/null | sed 's/^/::error::/'
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

@@ -53,13 +53,18 @@ jobs:
       - name: Build release APK (falls back to debug)
         run: |
           chmod +x ./gradlew
+          set -o pipefail
           if [ -f app/dev.keystore ]; then
-            ./gradlew :app:assembleRelease
+            ./gradlew :app:assembleRelease 2>&1 | tee build-log.txt
             cp app/build/outputs/apk/release/*.apk karaokei-release.apk
           else
-            ./gradlew :app:assembleDebug
+            ./gradlew :app:assembleDebug 2>&1 | tee build-log.txt
             cp app/build/outputs/apk/debug/*.apk karaokei-debug-signed.apk
           fi
+
+      - name: Report failure details
+        if: failure()
+        run: tail -n 40 build-log.txt 2>/dev/null | sed 's/^/::error::/'
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
