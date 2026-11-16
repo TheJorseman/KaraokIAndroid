@@ -50,16 +50,21 @@ fun LibraryScreen(
     onSongClick: (String) -> Unit,
     onPickFile: () -> Unit,
     onProcess: (String) -> Unit,
+    onProcessAll: (List<String>) -> Unit = {},
     onOpenModelManager: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val songs by viewModel.songs.collectAsStateWithLifecycle()
+    val pendingIds = songs.filter { it.status != SongStatus.READY }.map { it.id }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Biblioteca") },
                 actions = {
+                    if (pendingIds.size > 1) {
+                        TextButton(onClick = { onProcessAll(pendingIds) }) { Text("Procesar todo") }
+                    }
                     TextButton(onClick = onOpenModelManager) { Text("Modelos") }
                 },
             )

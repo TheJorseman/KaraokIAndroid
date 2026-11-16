@@ -47,15 +47,17 @@ class PipelineForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_CANCEL) {
             currentSongId?.let(orchestrator::cancel)
+            orchestrator.clearQueue()
             stopSelf()
             return START_NOT_STICKY
         }
+        val queueMode = intent?.action == ACTION_QUEUE
         val songId = intent?.getStringExtra(EXTRA_SONG_ID)
-        if (songId.isNullOrBlank()) {
+        if (songId.isNullOrBlank() && !queueMode) {
             stopSelf()
             return START_NOT_STICKY
         }
-        val force = intent.getBooleanExtra(EXTRA_FORCE_REPROCESS, false)
+        val force = intent?.getBooleanExtra(EXTRA_FORCE_REPROCESS, false) ?: false
         // Always re-launch the orchestrator (even if the same song
         // ID is already running). `PipelineOrchestrator.runAsync`
         // cancels the active job before launching a new one, so the
@@ -80,20 +82,43 @@ class PipelineForegroundService : Service() {
                     if (songId != null) {
                         runCatching { syncOnlineLyrics.enqueue(songId) }
                     }
-                    stopSelf()
+                    // Keep the service alive while the batch queue has
+                    // pending songs ("Procesar todo").
+                    if (orchestrator.pendingCount.value > 0) {
+                        renderNotification(
+                            state,
+                            overrideText = "En cola… (${orchestrator.pendingCount.value} canciones)",
+                        )
+                    } else {
+                        stopSelf()
+                    }
                 }
                 if (state.stage == PipelineStageName.ERROR ||
                     state.stage == PipelineStageName.CANCELLED
                 ) {
-                    stopSelf()
+                    // With a batch queue an error in one song must not
+                    // take the remaining songs down with it.
+                    if (orchestrator.pendingCount.value == 0) {
+                        stopSelf()
+                    }
                 }
             }
         }
-        orchestrator.runAsync(songId, force = force)
+        if (queueMode) {
+            // Batch mode: the orchestrator's queue consumer runs the
+            // enqueued songs; this service only hosts the notification
+            // and the foreground priority.
+            startInForeground("En cola…", 0)
+        } else {
+            orchestrator.runAsync(songId!!, force = force)
+        }
         return START_STICKY
     }
 
-    private fun renderNotification(state: com.karaokei.feature.pipeline.PipelineState) {
+    private fun renderNotification(
+        state: com.karaokei.feature.pipeline.PipelineState,
+        overrideText: String? = null,
+    ) {
         val (progress, text) = when (state.stage) {
             PipelineStageName.IDLE -> state.progress to "En cola"
             PipelineStageName.SEPARATION ->
@@ -109,7 +134,7 @@ class PipelineForegroundService : Service() {
             PipelineStageName.ERROR -> 100 to ("Error: ${state.error ?: "desconocido"}")
             PipelineStageName.CANCELLED -> 100 to "Cancelado"
         }
-        startInForeground(text, progress)
+        startInForeground(overrideText ?: text, if (overrideText != null) 0 else progress)
     }
 
     private fun startInForeground(text: String, progress: Int) {
@@ -190,6 +215,7 @@ class PipelineForegroundService : Service() {
         const val EXTRA_SONG_ID: String = "song_id"
         const val EXTRA_FORCE_REPROCESS: String = "force_reprocess"
         const val ACTION_CANCEL: String = "com.karaokei.android.pipeline.CANCEL"
+        const val ACTION_QUEUE: String = "com.karaokei.android.pipeline.QUEUE"
 
         /**
          * Fallback used when the foreground service cannot be started
@@ -222,6 +248,27 @@ class PipelineForegroundService : Service() {
                 } else {
                     Log.e(TAG, "no in-process fallback registered; pipeline not started")
                 }
+            }
+        }
+
+        /**
+         * Start the service in batch mode: the songs already enqueued in
+         * [PipelineOrchestrator.enqueue] are run by its queue consumer;
+         * this service only hosts the notification/foreground priority.
+         * If the foreground start is not allowed, the queue keeps
+         * processing in-process anyway (just without a notification).
+         */
+        fun startQueue(context: Context) {
+            val intent = Intent(context, PipelineForegroundService::class.java)
+                .setAction(ACTION_QUEUE)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "queue foreground start failed (${t.message}); continuing in-process")
             }
         }
     }

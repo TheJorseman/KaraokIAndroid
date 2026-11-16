@@ -64,17 +64,23 @@ class TranscribeSongUseCase @Inject constructor(
         _progress.value = 0f
         val tier = preferences.selectedTier.first()
         val testFixture = song.fileUri.endsWith("karaokei-test-audio.wav")
-        // Prefer the selected tier's model, then fall back to any
-        // usable model of the same type (embedded or downloaded with
-        // its file still on disk) instead of failing on a tier row
-        // that was never downloaded.
-        val model = (
-            listOfNotNull(modelDao.findUsableByTierAndType(tier, ModelType.TRANSCRIPTION)) +
-                modelDao.findUsableByType(ModelType.TRANSCRIPTION)
-            ).distinctBy { it.id }
-            .firstOrNull { it.isLoadable() }
-            ?: if (testFixture) null else
-                throw IllegalStateException("no hay ningún modelo de transcripción listo. Abre Modelos y descarga uno.")
+        // Prefer the selected tier's model, but with
+        // highQualityTranscription (default) the best *available*
+        // Whisper model wins — small > base > tiny by size — so local
+        // lyrics keep improving as the user downloads bigger models.
+        // With it disabled the tier's own model is used, falling back
+        // to any usable model.
+        val usable = modelDao.findUsableByType(ModelType.TRANSCRIPTION).filter { it.isLoadable() }
+        val model = if (preferences.highQualityTranscription.first()) {
+            usable.maxByOrNull { it.sizeBytes }
+        } else {
+            (listOfNotNull(modelDao.findUsableByTierAndType(tier, ModelType.TRANSCRIPTION)) + usable)
+                .distinctBy { it.id }
+                .firstOrNull { it.isLoadable() }
+        }
+        if (model == null && !testFixture) {
+            throw IllegalStateException("no hay ningún modelo de transcripción listo. Abre Modelos y descarga uno.")
+        }
 
         songDao.updateStatus(songId, SongStatus.TRANSCRIBING)
         val vocals = cacheLayout.vocalsFile(songId)

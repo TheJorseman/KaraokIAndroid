@@ -48,12 +48,17 @@ jobs:
           {
             echo "## Build failure"
             echo '```'
-            tail -n 60 build-log.txt 2>/dev/null || echo "(no log captured)"
+            tail -n 80 build-log.txt 2>/dev/null || echo "(no log captured)"
             echo '```'
             echo "- free mem: $(free -m | awk '/Mem:/ {print $7}') MB"
             echo "- java: $(java -version 2>&1 | head -1)"
           } >> "$GITHUB_STEP_SUMMARY"
-          tail -n 40 build-log.txt 2>/dev/null | sed 's/^/::error::/'
+          awk '/^FAILURE:/{f=1} f{print} /^\* Try:/{exit}' build-log.txt > error-block.txt
+          if [ -s error-block.txt ]; then
+            head -40 error-block.txt | sed 's/^/::error::/'
+          else
+            tail -n 25 build-log.txt | sed 's/^/::error::/'
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

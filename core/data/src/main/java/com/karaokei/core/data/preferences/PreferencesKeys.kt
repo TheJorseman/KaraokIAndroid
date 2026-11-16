@@ -28,4 +28,10 @@ object PreferencesKeys {
      * text onto the locally generated timestamps.
      */
     val LYRICS_ONLINE_SYNC = booleanPreferencesKey("lyrics_online_sync")
+    /**
+     * Transcribe with the best downloaded Whisper model (small > base >
+     * tiny) regardless of the selected tier, for higher quality local
+     * lyrics. When disabled the tier's own model is used.
+     */
+    val HIGH_QUALITY_TRANSCRIPTION = booleanPreferencesKey("high_quality_transcription")
 }

@@ -110,6 +110,18 @@ class ModelManagerViewModel @Inject constructor(
         viewModelScope.launch { preferences.setLyricsOnlineSync(enabled) }
     }
 
+    /** Transcribe with the best downloaded Whisper model regardless of tier. */
+    val highQualityTranscription: StateFlow<Boolean> = preferences.highQualityTranscription
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = true,
+        )
+
+    fun setHighQualityTranscription(enabled: Boolean) {
+        viewModelScope.launch { preferences.setHighQualityTranscription(enabled) }
+    }
+
     init {
         viewModelScope.launch {
             // The catalog table can be wiped by `pm clear` while the

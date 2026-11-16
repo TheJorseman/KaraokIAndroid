@@ -74,6 +74,10 @@ class UserPreferences @Inject constructor(
         prefs[PreferencesKeys.LYRICS_ONLINE_SYNC] ?: true
     }
 
+    val highQualityTranscription: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.HIGH_QUALITY_TRANSCRIPTION] ?: true
+    }
+
     suspend fun setSelectedTier(tier: ModelTier) {
         dataStore.edit { it[PreferencesKeys.SELECTED_TIER] = tier.name }
     }
@@ -113,5 +117,9 @@ class UserPreferences @Inject constructor(
 
     suspend fun setLyricsOnlineSync(enabled: Boolean) {
         dataStore.edit { it[PreferencesKeys.LYRICS_ONLINE_SYNC] = enabled }
+    }
+
+    suspend fun setHighQualityTranscription(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.HIGH_QUALITY_TRANSCRIPTION] = enabled }
     }
 }

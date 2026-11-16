@@ -46,6 +46,7 @@ fun ModelManagerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val effect by viewModel.effects.collectAsStateWithLifecycle()
     val lyricsOnlineSync by viewModel.lyricsOnlineSync.collectAsStateWithLifecycle()
+    val highQualityTranscription by viewModel.highQualityTranscription.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(effect) {
@@ -127,6 +128,24 @@ fun ModelManagerScreen(
                     Switch(
                         checked = lyricsOnlineSync,
                         onCheckedChange = viewModel::setLyricsOnlineSync,
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Transcripción de máxima calidad", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Usa el mejor modelo Whisper descargado (small > base > tiny) en vez del del tier.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = highQualityTranscription,
+                        onCheckedChange = viewModel::setHighQualityTranscription,
                     )
                 }
             }

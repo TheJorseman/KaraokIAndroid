@@ -70,7 +70,13 @@ jobs:
 
       - name: Report failure details
         if: failure()
-        run: tail -n 40 build-log.txt 2>/dev/null | sed 's/^/::error::/'
+        run: |
+          awk '/^FAILURE:/{f=1} f{print} /^\* Try:/{exit}' build-log.txt > error-block.txt
+          if [ -s error-block.txt ]; then
+            head -40 error-block.txt | sed 's/^/::error::/'
+          else
+            tail -n 25 build-log.txt | sed 's/^/::error::/'
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

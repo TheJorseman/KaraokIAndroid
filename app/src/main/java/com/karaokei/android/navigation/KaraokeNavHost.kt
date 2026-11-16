@@ -64,6 +64,11 @@ class RootViewModel @Inject constructor(
     fun cancelPipeline() {
         pipelineState.value.songId?.let(orchestrator::cancel)
     }
+
+    /** Queue several songs for sequential processing (batch mode). */
+    fun enqueueBatch(songIds: List<String>) {
+        songIds.forEach(orchestrator::enqueue)
+    }
 }
 
 @Composable
@@ -105,6 +110,13 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                         onPickFile = { navController.navigate(Routes.IMPORT) },
                         onProcess = { songId ->
                             PipelineForegroundService.start(context, songId, forceReprocess = true)
+                        },
+                        onProcessAll = { songIds ->
+                            // Batch queue: the orchestrator consumer
+                            // processes them one after another; the
+                            // service hosts the notification only.
+                            rootViewModel.enqueueBatch(songIds)
+                            PipelineForegroundService.startQueue(context)
                         },
                         onOpenModelManager = { navController.navigate(Routes.MODEL_MANAGER) },
                     )

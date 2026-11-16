@@ -53,6 +53,39 @@ class PipelineOrchestrator @Inject constructor(
     private val _state = MutableStateFlow(PipelineState())
     val state: StateFlow<PipelineState> = _state.asStateFlow()
 
+    // ---- batch queue -------------------------------------------------
+    // Songs enqueued with [enqueue] are processed one after another by a
+    // single consumer, so "Procesar todo" works without cancelling the
+    // run in flight (runAsync keeps its cancel-and-replace semantics).
+    private val queue = kotlinx.coroutines.channels.Channel<String>(
+        kotlinx.coroutines.channels.Channel.UNLIMITED,
+    )
+    private val _pendingCount = MutableStateFlow(0)
+    val pendingCount: StateFlow<Int> = _pendingCount.asStateFlow()
+
+    init {
+        scope.launch {
+            for (songId in queue) {
+                _pendingCount.update { (it - 1).coerceAtLeast(0) }
+                run(songId, force = false)
+            }
+        }
+    }
+
+    /** Queue a song for processing after the current run finishes. */
+    fun enqueue(songId: String) {
+        _pendingCount.update { it + 1 }
+        queue.trySend(songId)
+    }
+
+    /** Drop everything still waiting in the batch queue. */
+    fun clearQueue() {
+        while (queue.tryReceive().isSuccess) {
+            // drain
+        }
+        _pendingCount.value = 0
+    }
+
     /**
      * Runs the pipeline for [songId]. If `karaoke.json` is already
      * on disk, returns immediately. Otherwise, runs whichever stages
