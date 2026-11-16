@@ -27,12 +27,13 @@ jobs:
           git -C third_party/whisper.cpp checkout --detach 48f628a84833905ee4a0658ee6d4a5c915ce1997
 
       - name: Build and test
-        run: >-
-          ./gradlew :app:assembleDebug
-          :core:ai:testDebugUnitTest
-          :core:media:testDebugUnitTest
-          :feature:separation:testDebugUnitTest
-          :feature:karaoke-engine:test
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleDebug \
+            :core:ai:testDebugUnitTest \
+            :core:media:testDebugUnitTest \
+            :feature:separation:testDebugUnitTest \
+            :feature:karaoke-engine:test
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
