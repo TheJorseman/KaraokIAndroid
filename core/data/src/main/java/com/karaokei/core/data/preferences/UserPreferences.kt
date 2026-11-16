@@ -70,6 +70,10 @@ class UserPreferences @Inject constructor(
         prefs[PreferencesKeys.LYRICS_OFFSET_MS] ?: 0
     }
 
+    val lyricsOnlineSync: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.LYRICS_ONLINE_SYNC] ?: true
+    }
+
     suspend fun setSelectedTier(tier: ModelTier) {
         dataStore.edit { it[PreferencesKeys.SELECTED_TIER] = tier.name }
     }
@@ -105,5 +109,9 @@ class UserPreferences @Inject constructor(
 
     suspend fun setLyricsOffsetMs(offsetMs: Int) {
         dataStore.edit { it[PreferencesKeys.LYRICS_OFFSET_MS] = offsetMs }
+    }
+
+    suspend fun setLyricsOnlineSync(enabled: Boolean) {
+        dataStore.edit { it[PreferencesKeys.LYRICS_ONLINE_SYNC] = enabled }
     }
 }

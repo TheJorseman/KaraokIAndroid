@@ -20,6 +20,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -44,6 +45,7 @@ fun ModelManagerScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val effect by viewModel.effects.collectAsStateWithLifecycle()
+    val lyricsOnlineSync by viewModel.lyricsOnlineSync.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(effect) {
@@ -102,6 +104,31 @@ fun ModelManagerScreen(
                     selected = option.code == state.selectedLanguage,
                     onSelect = { viewModel.selectLanguage(option.code) },
                 )
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Letras verídicas",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Con internet, busca las letras reales de la canción y las sincroniza " +
+                        "con los tiempos generados de tu audio. Solo se envían título, artista " +
+                        "y duración — nunca el audio.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Sincronizar en línea", style = MaterialTheme.typography.bodyLarge)
+                    Switch(
+                        checked = lyricsOnlineSync,
+                        onCheckedChange = viewModel::setLyricsOnlineSync,
+                    )
+                }
             }
         }
     }

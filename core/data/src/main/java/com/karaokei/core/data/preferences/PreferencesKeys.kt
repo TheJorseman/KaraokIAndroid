@@ -22,4 +22,10 @@ object PreferencesKeys {
      * off. Defaults to 0.
      */
     val LYRICS_OFFSET_MS = intPreferencesKey("lyrics_offset_ms")
+    /**
+     * Allow fetching real lyrics (title/artist/duration only — never
+     * audio) from LRCLIB when internet is available, and syncing their
+     * text onto the locally generated timestamps.
+     */
+    val LYRICS_ONLINE_SYNC = booleanPreferencesKey("lyrics_online_sync")
 }

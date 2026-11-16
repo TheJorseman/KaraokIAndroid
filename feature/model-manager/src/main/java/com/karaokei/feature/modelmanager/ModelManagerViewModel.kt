@@ -98,6 +98,18 @@ class ModelManagerViewModel @Inject constructor(
     private val _effects = MutableStateFlow<Effect?>(null)
     val effects: StateFlow<Effect?> = _effects.asStateFlow()
 
+    /** Opt-in for fetching real lyrics online (title/artist/duration only). */
+    val lyricsOnlineSync: StateFlow<Boolean> = preferences.lyricsOnlineSync
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = true,
+        )
+
+    fun setLyricsOnlineSync(enabled: Boolean) {
+        viewModelScope.launch { preferences.setLyricsOnlineSync(enabled) }
+    }
+
     init {
         viewModelScope.launch {
             // The catalog table can be wiped by `pm clear` while the

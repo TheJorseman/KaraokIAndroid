@@ -36,6 +36,7 @@ import javax.inject.Inject
 class PipelineForegroundService : Service() {
 
     @Inject lateinit var orchestrator: PipelineOrchestrator
+    @Inject lateinit var syncOnlineLyrics: com.karaokei.feature.modelmanager.lyrics.SyncOnlineLyricsUseCase
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
@@ -69,8 +70,19 @@ class PipelineForegroundService : Service() {
         stateJob = scope.launch {
             orchestrator.state.collectLatest { state ->
                 renderNotification(state)
-                if (state.stage == PipelineStageName.DONE ||
-                    state.stage == PipelineStageName.ERROR ||
+                if (state.stage == PipelineStageName.DONE) {
+                    // Best-effort: fetch real lyrics and re-sync them
+                    // onto the local timestamps. Enqueued through
+                    // WorkManager so it survives this service stopping
+                    // and retries when internet appears; it never
+                    // fails the pipeline.
+                    val songId = state.songId
+                    if (songId != null) {
+                        runCatching { syncOnlineLyrics.enqueue(songId) }
+                    }
+                    stopSelf()
+                }
+                if (state.stage == PipelineStageName.ERROR ||
                     state.stage == PipelineStageName.CANCELLED
                 ) {
                     stopSelf()
