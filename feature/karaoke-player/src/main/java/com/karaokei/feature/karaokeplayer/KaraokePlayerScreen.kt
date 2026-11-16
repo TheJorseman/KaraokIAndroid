@@ -69,8 +69,8 @@ fun KaraokePlayerScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
                 PlayerHeader(
-                    title = state.song?.title ?: "—",
-                    subtitle = state.song?.artist ?: "Karaoke",
+                    title = com.karaokei.core.common.text.SongTitles.prettify(state.song?.title ?: "—"),
+                    subtitle = state.song?.artist?.takeIf { it.isNotBlank() } ?: "Karaoke",
                     onBack = onBack,
                 )
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
