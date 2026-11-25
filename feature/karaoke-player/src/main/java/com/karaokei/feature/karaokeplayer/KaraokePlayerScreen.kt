@@ -36,11 +36,13 @@ import com.karaokei.core.designsystem.component.KaraokeStageBackground
 import com.karaokei.feature.karaoke.engine.KaraokeEngine
 import com.karaokei.feature.karaoke.engine.KaraokeState
 import com.karaokei.feature.karaokeplayer.renderer.KaraokeLyricsRenderer
+import com.karaokei.feature.karaokeplayer.renderer.KaraokeRenderStyle
 
 @Composable
 fun KaraokePlayerScreen(
     songId: String,
     onBack: () -> Unit = {},
+    onSongFinished: (String) -> Unit = {},
     viewModel: KaraokePlayerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -70,6 +72,23 @@ fun KaraokePlayerScreen(
 
     var showEditDialog by remember { mutableStateOf(false) }
 
+    // Autoplay: when the current song finishes, the ViewModel hands us
+    // the next song id and the navigation layer swaps the screen.
+    val nextSong by viewModel.nextSong.collectAsStateWithLifecycle()
+    LaunchedEffect(nextSong) {
+        nextSong?.let {
+            viewModel.consumeNextSong()
+            onSongFinished(it)
+        }
+    }
+
+    // Party mode: keep the screen on while singing.
+    val localView = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        localView.keepScreenOn = true
+        onDispose { localView.keepScreenOn = false }
+    }
+
     KaraokeStageBackground {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
@@ -86,7 +105,16 @@ fun KaraokePlayerScreen(
                             style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
                         )
                     } else {
-                        KaraokeLyricsRenderer(state = engineState)
+                        val style by viewModel.karaokeStyle.collectAsStateWithLifecycle()
+                        KaraokeLyricsRenderer(
+                            state = engineState,
+                            renderStyle = KaraokeRenderStyle(
+                                activeFontSp = style.fontSizeSp,
+                                activeColor = parseColor(style.activeColor, Color(0xFFFFD740)),
+                                upcomingColor = parseColor(style.upcomingColor, Color(0xB3E5FC)),
+                                shadow = style.shadowEnabled,
+                            ),
+                        )
                     }
                 }
                 PlayerControls(
@@ -166,6 +194,9 @@ internal fun formatClock(millis: Long): String {
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
+
+internal fun parseColor(hex: String, fallback: Color): Color =
+    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(fallback)
 
 @Composable
 private fun PlayerControls(

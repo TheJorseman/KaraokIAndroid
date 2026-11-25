@@ -43,6 +43,7 @@ object Routes {
     const val PLAYER = "player/{songId}"
     const val IMPORT = "import"
     const val MODEL_MANAGER = "model_manager"
+    const val SETTINGS = "settings"
 
     fun detail(songId: String): String = "detail/$songId"
     fun player(songId: String): String = "player/$songId"
@@ -119,6 +120,12 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                             PipelineForegroundService.startQueue(context)
                         },
                         onOpenModelManager = { navController.navigate(Routes.MODEL_MANAGER) },
+                        onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    )
+                }
+                composable(Routes.SETTINGS) {
+                    com.karaokei.feature.library.SettingsScreen(
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(Routes.IMPORT) {
@@ -151,6 +158,13 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                     KaraokePlayerScreen(
                         songId = songId,
                         onBack = { navController.popBackStack() },
+                        onSongFinished = { nextId ->
+                            // Autoplay queue: replace the player route
+                            // with the next song, keeping the back stack
+                            // clean (back returns to the library).
+                            navController.popBackStack()
+                            navController.navigate(Routes.player(nextId))
+                        },
                     )
                 }
                 composable(Routes.MODEL_MANAGER) {

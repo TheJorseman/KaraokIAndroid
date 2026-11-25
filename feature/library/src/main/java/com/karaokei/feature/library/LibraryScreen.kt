@@ -18,12 +18,19 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Input
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Sort
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +38,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,10 +62,15 @@ fun LibraryScreen(
     onProcess: (String) -> Unit,
     onProcessAll: (List<String>) -> Unit = {},
     onOpenModelManager: () -> Unit,
+    onOpenSettings: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
-    val songs by viewModel.songs.collectAsStateWithLifecycle()
-    val pendingIds = songs.filter { it.status != SongStatus.READY }.map { it.id }
+    val songs by viewModel.visibleSongs.collectAsStateWithLifecycle()
+    val allSongs by viewModel.songs.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val pendingIds = allSongs.filter { it.status != SongStatus.READY }.map { it.id }
+    var sortMenuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -64,6 +79,9 @@ fun LibraryScreen(
                 actions = {
                     if (pendingIds.size > 1) {
                         TextButton(onClick = { onProcessAll(pendingIds) }) { Text("Procesar todo") }
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Outlined.Settings, contentDescription = "Ajustes")
                     }
                     TextButton(onClick = onOpenModelManager) { Text("Modelos") }
                 },
@@ -77,11 +95,54 @@ fun LibraryScreen(
             )
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (songs.isEmpty()) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = viewModel::setQuery,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Buscar…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                )
+                Box {
+                    IconButton(onClick = { sortMenuOpen = true }) {
+                        Icon(Icons.Outlined.Sort, contentDescription = "Ordenar")
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuOpen,
+                        onDismissRequest = { sortMenuOpen = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Más recientes") },
+                            onClick = { viewModel.setSort(SongSort.RECENT); sortMenuOpen = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Título") },
+                            onClick = { viewModel.setSort(SongSort.TITLE); sortMenuOpen = false },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Duración") },
+                            onClick = { viewModel.setSort(SongSort.DURATION); sortMenuOpen = false },
+                        )
+                    }
+                }
+            }
+            if (allSongs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         "No hay canciones. Toca \"Importar\" para empezar.",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            } else if (songs.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Sin resultados para \"$query\".",
                         style = MaterialTheme.typography.bodyLarge,
                     )
                 }

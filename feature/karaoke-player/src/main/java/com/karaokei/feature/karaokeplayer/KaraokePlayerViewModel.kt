@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -54,16 +55,49 @@ class KaraokePlayerViewModel @Inject constructor(
             initialValue = 0,
         )
 
+    /** Live karaoke render style (font size, colors, shadow). */
+    val karaokeStyle: StateFlow<com.karaokei.core.data.preferences.UserPreferences.KaraokeStyle> =
+        userPreferences.karaokeStyle.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = com.karaokei.core.data.preferences.UserPreferences.KaraokeStyle(),
+        )
+
     private var engine: KaraokeEngine? = null
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    // ---- playback queue (autoplay) ----------------------------------
+    private var playlist: List<String> = emptyList()
+    private var currentSongId: String? = null
+    private var endFired = false
+
+    private val _nextSong = MutableStateFlow<String?>(null)
+
+    /** Set when the current song reaches its end: the id of the next one. */
+    val nextSong: StateFlow<String?> = _nextSong.asStateFlow()
+
+    fun consumeNextSong() {
+        _nextSong.value = null
+    }
+
     fun load(songId: String) {
+        currentSongId = songId
+        endFired = false
+        _nextSong.value = null
         viewModelScope.launch {
             val song = songRepository.findById(songId)
             if (song == null) {
                 _state.update { it.copy(error = "Canción no encontrada") }
                 return@launch
+            }
+            if (playlist.isEmpty()) {
+                playlist = withContext(Dispatchers.IO) {
+                    songRepository.observeAll()
+                        .first()
+                        .filter { it.status == com.karaokei.core.data.db.entity.SongStatus.READY }
+                        .map { it.id }
+                }
             }
             val karaokeFile: File = cacheLayout.karaokeFile(songId)
             if (!karaokeFile.exists()) {
@@ -135,9 +169,22 @@ class KaraokePlayerViewModel @Inject constructor(
                 val position = player.currentPositionMs()
                 engine?.onTick(position)
                 _state.update { it.copy(positionMs = position) }
+                maybeAdvanceToNext(position)
                 delay(33L) // ~30 fps; cheap because state is a data class.
             }
         }
+    }
+
+    /** Autoplay: when the song ends, hand the next id to the screen. */
+    private fun maybeAdvanceToNext(position: Long) {
+        val duration = _state.value.durationMs
+        if (endFired || duration <= 0 || position < duration - 250) return
+        endFired = true
+        val current = currentSongId ?: return
+        val index = playlist.indexOf(current)
+        if (index < 0 || playlist.size < 2) return
+        val next = playlist[(index + 1) % playlist.size]
+        _nextSong.value = next
     }
 
     /**
