@@ -211,6 +211,21 @@ class PipelineOrchestrator @Inject constructor(
         cacheDao.deleteForSong(songId)
         _state.update { PipelineState() }
     }
+
+    /**
+     * Partial invalidation: drop the outputs of [from] and later
+     * stages so the next run redoes only those while reusing the
+     * earlier ones (e.g. `TRANSCRIPTION` re-runs lyrics + alignment
+     * while keeping the separated vocals).
+     */
+    suspend fun invalidateFrom(
+        songId: String,
+        from: com.karaokei.core.data.db.entity.ProcessingStage,
+    ) {
+        cacheLayout.deleteFrom(songId, from)
+        cacheDao.deleteForSong(songId)
+        songDao.updateStatus(songId, com.karaokei.core.data.db.entity.SongStatus.IMPORTED)
+    }
 }
 
 data class PipelineState(

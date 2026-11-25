@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
+import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -69,6 +71,23 @@ class RootViewModel @Inject constructor(
     /** Queue several songs for sequential processing (batch mode). */
     fun enqueueBatch(songIds: List<String>) {
         songIds.forEach(orchestrator::enqueue)
+    }
+
+    /**
+     * Partial invalidation ("Rehacer letras"): drop transcript +
+     * karaoke but keep the separated vocals, then [onReady] starts the
+     * run (force=false reuses the separation).
+     */
+    fun redoLyrics(songId: String, onReady: () -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                orchestrator.invalidateFrom(
+                    songId,
+                    com.karaokei.core.data.db.entity.ProcessingStage.TRANSCRIPTION,
+                )
+            }
+            onReady()
+        }
     }
 }
 
@@ -147,6 +166,11 @@ fun KaraokeNavHost(rootViewModel: RootViewModel = hiltViewModel()) {
                         onPlay = { navController.navigate(Routes.player(songId)) },
                         onProcess = {
                             PipelineForegroundService.start(context, songId, forceReprocess = true)
+                        },
+                        onRedoLyrics = {
+                            rootViewModel.redoLyrics(songId) {
+                                PipelineForegroundService.start(context, songId, forceReprocess = false)
+                            }
                         },
                     )
                 }

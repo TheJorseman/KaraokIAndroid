@@ -46,5 +46,26 @@ class SongCacheLayout @Inject constructor(
         return dir.delete()
     }
 
+    /**
+     * Partial invalidation: drop only the outputs of [from] and later
+     * stages, keeping what came before. "Rehacer letras" uses this to
+     * re-run transcription + alignment (minutes) without redoing the
+     * separation (most of the time).
+     */
+    fun deleteFrom(songId: String, from: com.karaokei.core.data.db.entity.ProcessingStage) {
+        when (from) {
+            com.karaokei.core.data.db.entity.ProcessingStage.SEPARATION -> deleteAll(songId)
+            com.karaokei.core.data.db.entity.ProcessingStage.TRANSCRIPTION -> {
+                transcriptFile(songId).delete()
+                karaokeFile(songId).delete()
+                metadataFile(songId).delete()
+            }
+            com.karaokei.core.data.db.entity.ProcessingStage.ALIGNMENT -> {
+                karaokeFile(songId).delete()
+                metadataFile(songId).delete()
+            }
+        }
+    }
+
     fun modelsDir(): File = File(context.filesDir, "models").apply { mkdirs() }
 }

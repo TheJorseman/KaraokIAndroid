@@ -47,22 +47,32 @@ que todavía requieren implementación o validación real.
 ## Pendientes válidos
 
 ### Audio y Media3
-- [ ] Probar extracción en dispositivos reales para flac, m4a, mp4 y
-  mkv (mp3/wav ya verificados).
-- [ ] Pruebas de archivos corruptos, sin pista de audio y con
-  múltiples pistas.
-- [ ] Decidir si se compila `media3-decoder-ffmpeg` desde
-  `androidx/media` (no publicado en Maven).
+- [x] Extracción por formato verificada: 8 tests instrumentados en
+  emulador (`AudioFormatExtractionTest`) cubren flac, m4a, mp4, mkv,
+  multipista (elige una pista de audio), corrupto, vídeo sin audio y
+  archivo truncado — los hostiles fallan limpio. Fixtures generados
+  con ffmpeg en `core/media/src/androidTest/assets/formats/`.
+- [x] `media3-decoder-ffmpeg`: decidido NO compilarlo; se mantiene la
+  extracción nativa de Media3 (documentado en AGENTS.md y en
+  `core/media/build.gradle.kts`).
 
 ### Pipeline
-- [ ] Reanudar correctamente después de matar/recrear el proceso.
-- [ ] Test explícito de que nunca se cargan dos modelos a la vez.
-- [ ] Invalidación parcial de caché (hoy "reprocesar" borra todo).
+- [x] Reanudación tras matar/recrear el proceso: `findInterruptedIds`
+  + auto-resume al arrancar con `force=false` (reutiliza las etapas ya
+  completadas en disco).
+- [x] Garantía de un modelo a la vez: `PipelineOrchestratorTest` fija
+  la serialización (runs concurrentes, cancel-and-replace y cola por
+  lotes) — `maxActive == 1` en los tres escenarios.
+- [x] Invalidación parcial de caché: `invalidateFrom(stage)` +
+  botón **"Rehacer letras"** (rehace transcripción + alineación
+  reutilizando la separación).
 
 ### UI y reproducción
+- [x] Rotación y recreación de Activity verificadas en emulador
+  (landscape renderiza el player completo; `always_finish_activities`
+  + relanzamiento sin crashes).
 - [ ] Portadas de álbum (`cover_uri` existe en la entidad y no se
   usa; requiere extracción de artwork con MediaMetadataRetriever).
-- [ ] Probar rotación y recreación de Activity durante la reproducción.
 - [ ] Textos en `strings.xml` (hoy literales en Compose) + soporte
   completo de TalkBack y tamaño de fuente del sistema.
 

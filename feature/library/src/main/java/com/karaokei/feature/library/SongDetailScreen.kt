@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Autorenew
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Lyrics
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
@@ -40,6 +41,7 @@ fun SongDetailScreen(
     songId: String,
     onPlay: () -> Unit,
     onProcess: () -> Unit,
+    onRedoLyrics: () -> Unit = {},
     viewModel: SongDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
@@ -122,6 +124,15 @@ fun SongDetailScreen(
                 Icon(Icons.Outlined.Autorenew, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
                 Text("Procesar / reprocesar")
+            }
+            OutlinedButton(
+                onClick = onRedoLyrics,
+                enabled = state.hasKaraoke || state.song?.status == SongStatus.READY,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Outlined.Lyrics, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text("Rehacer letras")
             }
             OutlinedButton(
                 onClick = { viewModel.retry(songId) },

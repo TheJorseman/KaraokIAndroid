@@ -39,8 +39,21 @@ class KaraokeApp : Application(), Configuration.Provider {
             // A crash mid-pipeline leaves songs stuck at
             // "Separando voz…" / "Transcribiendo…" forever. At cold
             // start no pipeline is running yet, so clear those
-            // transient statuses before anything else.
-            runCatching { songDao.resetTransientStatuses() }
+            // transient statuses before anything else — and RESUME
+            // the interrupted runs: force=false reuses whatever
+            // stages already finished (files on disk).
+            runCatching {
+                val interrupted = songDao.findInterruptedIds()
+                songDao.resetTransientStatuses()
+                interrupted.forEach { songId ->
+                    Log.i(TAG, "Resuming interrupted pipeline for $songId")
+                    com.karaokei.android.pipeline.PipelineForegroundService.start(
+                        context = this@KaraokeApp,
+                        songId = songId,
+                        forceReprocess = false,
+                    )
+                }
+            }
                 .onFailure { Log.e(TAG, "Failed to reset transient song statuses", it) }
             // Always re-sync the catalog on cold start so newly added
             // entries (e.g. an OTA catalog update) appear in the

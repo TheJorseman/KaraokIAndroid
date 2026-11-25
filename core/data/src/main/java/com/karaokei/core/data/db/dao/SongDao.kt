@@ -39,6 +39,10 @@ interface SongDao {
         "WHERE status IN ('SEPARATING', 'TRANSCRIBING', 'ALIGNING')")
     suspend fun resetTransientStatuses()
 
+    /** Songs whose pipeline was interrupted (process killed mid-run). */
+    @Query("SELECT id FROM songs WHERE status IN ('SEPARATING', 'TRANSCRIBING', 'ALIGNING')")
+    suspend fun findInterruptedIds(): List<String>
+
     @Query("DELETE FROM songs WHERE id = :id")
     suspend fun deleteById(id: String)
 }
