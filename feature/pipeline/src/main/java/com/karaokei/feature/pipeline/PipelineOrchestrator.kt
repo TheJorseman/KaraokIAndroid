@@ -103,6 +103,7 @@ class PipelineOrchestrator @Inject constructor(
                 progress = 0,
                 error = null,
                 testFixture = testFixture,
+                startedAtMs = System.currentTimeMillis(),
             )
         }
         try {
@@ -234,7 +235,36 @@ data class PipelineState(
     val progress: Int = 0,
     val error: String? = null,
     val testFixture: Boolean = false,
-)
+    /** When the current run started; drives the ETA estimate. */
+    val startedAtMs: Long? = null,
+) {
+    /**
+     * Estimated remaining time, or null while too little data is
+     * available (first seconds of a run or under 8% progress would
+     * produce noisy estimates).
+     */
+    fun etaRemainingMs(nowMs: Long = System.currentTimeMillis()): Long? {
+        val start = startedAtMs ?: return null
+        if (stage != PipelineStageName.SEPARATION &&
+            stage != PipelineStageName.TRANSCRIBING &&
+            stage != PipelineStageName.ALIGNING
+        ) return null
+        val p = progress.coerceIn(1, 99)
+        if (p < 8) return null
+        val elapsed = nowMs - start
+        if (elapsed < 5_000) return null
+        val total = elapsed * 100.0 / p
+        return (total - elapsed).toLong().coerceAtLeast(0L)
+    }
+}
+
+/** `"≈ 4 min"` / `"≈ 35 s"` for the progress UI and notification. */
+fun formatEta(remainingMs: Long): String {
+    val totalSec = (remainingMs + 999) / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return if (min >= 1) "≈ $min min" else "≈ $sec s"
+}
 
 enum class PipelineStageName { IDLE, SEPARATION, TRANSCRIBING, ALIGNING, DONE, ERROR, CANCELLED }
 

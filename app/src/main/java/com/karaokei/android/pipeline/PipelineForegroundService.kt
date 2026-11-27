@@ -134,7 +134,9 @@ class PipelineForegroundService : Service() {
             PipelineStageName.ERROR -> 100 to ("Error: ${state.error ?: "desconocido"}")
             PipelineStageName.CANCELLED -> 100 to "Cancelado"
         }
-        startInForeground(overrideText ?: text, if (overrideText != null) 0 else progress)
+        val eta = state.etaRemainingMs()
+        val withEta = if (eta != null) "$text · ${com.karaokei.feature.pipeline.formatEta(eta)}" else text
+        startInForeground(overrideText ?: withEta, if (overrideText != null) 0 else progress)
     }
 
     private fun startInForeground(text: String, progress: Int) {

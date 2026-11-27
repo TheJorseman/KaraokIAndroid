@@ -125,8 +125,12 @@ private fun ActiveCard(state: PipelineState, onCancel: () -> Unit) {
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    val eta = state.etaRemainingMs()
                     Text(
-                        text = "Etapa ${stageNumber(state.stage)} de ${STAGE_COUNT}",
+                        text = buildString {
+                            append("Etapa ${stageNumber(state.stage)} de $STAGE_COUNT")
+                            if (eta != null) append(" · quedan ${com.karaokei.feature.pipeline.formatEta(eta)}")
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
