@@ -59,10 +59,14 @@ class SongCacheLayout @Inject constructor(
                 transcriptFile(songId).delete()
                 karaokeFile(songId).delete()
                 metadataFile(songId).delete()
+                // The online-lyrics marker must go too, otherwise the
+                // sync of the new lyrics is skipped as "already done".
+                File(dirFor(songId), "lyrics_sync.json").delete()
             }
             com.karaokei.core.data.db.entity.ProcessingStage.ALIGNMENT -> {
                 karaokeFile(songId).delete()
                 metadataFile(songId).delete()
+                File(dirFor(songId), "lyrics_sync.json").delete()
             }
         }
     }
