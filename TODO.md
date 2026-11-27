@@ -82,8 +82,9 @@ que todavía requieren implementación o validación real.
   ventanas/overlap.
 - [ ] Verificar alineamiento 16 KB de los `.so` de ORT en Android 15+.
 - [ ] Reducir warnings deprecados de AGP.
-- [ ] Reducir el tamaño del AAB (164 MB): separar assets del APK con
-  Play Feature Delivery/Asset Pack.
+- [x] Reducir el tamaño del bundle: eliminado el runtime QNN muerto
+  (168 MB de libs Hexagon) y las ABIs x86/armeabi-v7a (52 MB). AAB
+  164→62 MB, APK 355→122 MB, instalación Play en arm64 ≈ 35 MB.
 
 ### Release
 - [ ] Mover `storePassword`/`keyPassword` del `build.gradle.kts` a
