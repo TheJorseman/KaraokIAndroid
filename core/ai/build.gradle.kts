@@ -22,14 +22,10 @@ dependencies {
 
     implementation(libs.kotlinx.coroutines.android)
 
-    // ONNX Runtime (standard build). NOTE: the -qnn AAR variant was
-    // measured producing degraded HTDemucs output on a Galaxy S24
-    // Ultra (attenuated vocals -> vocal leakage in the instrumental),
-    // so the stock build is used even though it lacks addQnn().
+    // ONNX Runtime (standard build; the QNN EP is not available in
+    // stock ORT for Android — see OrtSessionFactory for the QNN
+    // investigation notes).
     api(libs.onnxruntime.android)
-    // QNN backend runtime (Hexagon libs). Kept for experimentation;
-    // the QNN backend option falls back to CPU when the EP is absent.
-    api(libs.qnn.runtime)
 
     // Hilt
     implementation(libs.hilt.android)

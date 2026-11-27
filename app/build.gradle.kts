@@ -12,6 +12,13 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        // The app only builds native code (whisper.cpp) for 64-bit
+        // ABIs; restricting the bundled ABIs also drops the x86 and
+        // armeabi-v7a copies of the ONNX Runtime libs from every
+        // APK/AAB (~52 MB uncompressed).
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
         applicationId = "com.karaokei.android"
         minSdk = 26
         targetSdk = 35
