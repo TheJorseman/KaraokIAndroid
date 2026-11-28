@@ -68,11 +68,18 @@ class PipelineForegroundService : Service() {
         // Re-subscribe to orchestrator state every time the service
         // gets a fresh start command, so the notification stays in
         // sync after the system kills and recreates the service.
+        // Terminal states are only acted upon when they belong to the
+        // run started by THIS command: the orchestrator state may
+        // still hold the DONE of a previous run, which would stop the
+        // service instantly and the real run's DONE would never be
+        // observed (lyrics sync silently skipped).
+        val serviceStartMs = System.currentTimeMillis()
         stateJob?.cancel()
         stateJob = scope.launch {
             orchestrator.state.collectLatest { state ->
                 renderNotification(state)
-                if (state.stage == PipelineStageName.DONE) {
+                val fresh = (state.startedAtMs ?: 0L) >= serviceStartMs - 1_000L
+                if (state.stage == PipelineStageName.DONE && fresh) {
                     // Best-effort: fetch real lyrics and re-sync them
                     // onto the local timestamps. Enqueued through
                     // WorkManager so it survives this service stopping
@@ -93,8 +100,8 @@ class PipelineForegroundService : Service() {
                         stopSelf()
                     }
                 }
-                if (state.stage == PipelineStageName.ERROR ||
-                    state.stage == PipelineStageName.CANCELLED
+                if ((state.stage == PipelineStageName.ERROR ||
+                        state.stage == PipelineStageName.CANCELLED) && fresh
                 ) {
                     // With a batch queue an error in one song must not
                     // take the remaining songs down with it.

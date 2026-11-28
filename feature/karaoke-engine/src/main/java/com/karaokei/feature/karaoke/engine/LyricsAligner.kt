@@ -103,6 +103,7 @@ object LyricsAligner {
             )
         }
         if (outLines.isEmpty()) return null
+        rescueCrammedLines(outLines, realLines, offset)
         return KaraokeDocument(
             songId = local.songId,
             language = local.language,
@@ -127,15 +128,40 @@ object LyricsAligner {
         realLines: List<RealLine>,
         offset: Double,
     ) {
+        // LRC-based placement for unanchored words: each word gets a
+        // slot inside its line's LRC span (this line's start -> the
+        // next line's start, or +3 s for the last one), distributed by
+        // word length and shifted by the measured global offset. NaN
+        // for lines without LRC times. This keeps the shape of the
+        // original timing (line pacing and pauses) instead of
+        // stretching words uniformly.
+        val lrcStart = DoubleArray(texts.size) { Double.NaN }
+        val lrcEnd = DoubleArray(texts.size) { Double.NaN }
+        val byLine = LinkedHashMap<Int, MutableList<Int>>()
+        for (i in texts.indices) byLine.getOrPut(lineIndex[i]) { mutableListOf() }.add(i)
+        for ((li, indices) in byLine) {
+            val lineStart = realLines.getOrNull(li)?.startSec ?: continue
+            val nextStart = realLines.getOrNull(li + 1)?.startSec
+            val span = ((nextStart ?: (lineStart + 3.0)) - lineStart).coerceAtLeast(0.3)
+            val total = indices.sumOf { texts[it].length.coerceAtLeast(1).toDouble() }
+            var acc = 0.0
+            for (i in indices) {
+                val w = texts[i].length.coerceAtLeast(1).toDouble()
+                lrcStart[i] = lineStart + offset + span * (acc / total)
+                lrcEnd[i] = lineStart + offset + span * ((acc + w) / total)
+                acc += w
+            }
+        }
+
         val anchored = starts.indices.filter { !starts[it].isNaN() }
         if (anchored.isEmpty()) {
             // No anchors at all: place purely from LRC (offset-corrected),
             // falling back to a running estimate without LRC times.
             var running = 0.0
             for (i in starts.indices) {
-                val est = realLines.getOrNull(lineIndex[i])?.startSec?.plus(offset) ?: running
+                val est = if (!lrcStart[i].isNaN()) lrcStart[i] else running
                 starts[i] = est
-                ends[i] = est + estimateDuration(texts[i])
+                ends[i] = if (!lrcEnd[i].isNaN()) lrcEnd[i] else est + estimateDuration(texts[i])
                 running = ends[i]
             }
             return
@@ -161,16 +187,20 @@ object LyricsAligner {
                     }
                 }
                 prev != null -> {
-                    // Trailing words after the last anchor.
-                    val est = ends[prev] + (i - prev) * 0.35
+                    // Trailing words after the last anchor: LRC wins
+                    // when available, uniform estimate otherwise.
+                    val est = if (!lrcStart[i].isNaN()) lrcStart[i] else ends[prev] + (i - prev) * 0.35
                     starts[i] = est
-                    ends[i] = est + estimateDuration(texts[i])
+                    ends[i] = if (!lrcEnd[i].isNaN()) lrcEnd[i] else est + estimateDuration(texts[i])
                 }
                 else -> {
-                    // Leading words before the first anchor.
-                    val est = starts[first] - (first - i) * 0.35
+                    // Leading words before the first anchor: LRC wins
+                    // when available — the uniform 0.35 s/word stretch
+                    // used to garble the pacing of whole opening
+                    // verses whenever the ASR missed the first lines.
+                    val est = if (!lrcStart[i].isNaN()) lrcStart[i] else starts[first] - (first - i) * 0.35
                     starts[i] = est
-                    ends[i] = est + estimateDuration(texts[i])
+                    ends[i] = if (!lrcEnd[i].isNaN()) lrcEnd[i] else est + estimateDuration(texts[i])
                 }
             }
         }
@@ -178,6 +208,41 @@ object LyricsAligner {
 
     private fun estimateDuration(text: String): Double =
         (text.length.coerceIn(2, 12)) * 0.06
+
+    /**
+     * ASR word times can be badly compressed for a phrase (whisper
+     * sometimes packs several seconds of singing into a few tenths).
+     * When a line with LRC times ends up occupying less than 25% of
+     * its LRC span, its words are re-placed with the LRC pacing so a
+     * whole verse never collapses into a flash.
+     */
+    private fun rescueCrammedLines(
+        lines: MutableList<KaraokeLine>,
+        realLines: List<RealLine>,
+        offset: Double,
+    ) {
+        for (li in lines.indices) {
+            val lrc = realLines.getOrNull(li)?.startSec ?: continue
+            val nextLrc = realLines.getOrNull(li + 1)?.startSec
+            val lrcSpan = ((nextLrc ?: (lrc + 3.0)) - lrc).coerceAtLeast(0.3)
+            val line = lines[li]
+            val span = line.end - line.start
+            if (span >= 0.25 * lrcSpan) continue
+            val total = line.words.sumOf { it.text.length.coerceAtLeast(1).toDouble() }
+            var acc = 0.0
+            val words = line.words.map { w ->
+                val width = w.text.length.coerceAtLeast(1).toDouble()
+                val start = lrc + offset + lrcSpan * (acc / total)
+                acc += width
+                w.copy(start = start, end = lrc + offset + lrcSpan * (acc / total))
+            }
+            lines[li] = line.copy(
+                start = words.first().start,
+                end = words.last().end,
+                words = words,
+            )
+        }
+    }
 
     private fun normalize(text: String): String =
         text.lowercase().replace(NON_WORD, "")

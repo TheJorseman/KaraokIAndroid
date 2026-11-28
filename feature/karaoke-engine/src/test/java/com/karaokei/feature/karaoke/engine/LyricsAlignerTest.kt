@@ -72,6 +72,58 @@ class LyricsAlignerTest {
         assertThat(LyricsAligner.align(real, local)).isNull()
     }
 
+    @Test fun `leading lines with LRC use their own times, not the uniform stretch`() {
+        // The ASR missed the whole opening verse (first anchor is at
+        // 20 s) but the fetched lyrics have LRC times at 10/15 s: the
+        // opening must land near those times (plus the measured
+        // offset), NOT stretched backwards at 0.35 s per word.
+        val local = doc(line(word("final", 20.5, 21.5)))
+        val real = listOf(
+            LyricsAligner.RealLine("uno dos tres cuatro", 10.0),
+            LyricsAligner.RealLine("cinco seis", 15.0),
+            LyricsAligner.RealLine("final", 20.0),
+        )
+        val out = LyricsAligner.align(real, local)!!
+        // offset = median(20.5 - 20.0) = +0.5
+        val v1 = out.lines[0].words
+        assertThat(v1.first().start).isWithin(0.2).of(10.5)
+        assertThat(v1.last().end).isAtMost(16.0) // stays inside its LRC line span
+        val v2 = out.lines[1].words
+        assertThat(v2.first().start).isWithin(0.3).of(15.5)
+    }
+
+    @Test fun `no-anchor words are distributed inside their LRC line spans`() {
+        val local = doc(line(word("x", 1.0, 2.0)))
+        val real = listOf(
+            LyricsAligner.RealLine("aaa bbb", 5.0),
+            LyricsAligner.RealLine("ccc", 8.0),
+        )
+        val out = LyricsAligner.align(real, local)!!
+        val l1 = out.lines[0].words
+        // Both words live inside [5, 8) scaled by length, no overlap.
+        assertThat(l1[0].start).isWithin(0.2).of(5.0)
+        assertThat(l1[1].start).isGreaterThan(l1[0].end - 0.01)
+        assertThat(out.lines[1].words[0].start).isWithin(0.3).of(8.0)
+    }
+
+    @Test fun `crammed ASR times are rescued with the LRC pacing`() {
+        // Whisper packed a whole phrase into two tenths of a second;
+        // matched words inherit the compressed times and the line
+        // would flash by. The rescue pass re-places such lines using
+        // the LRC span.
+        val local = doc(
+            line(word("sentimiento", 81.40, 81.46), word("jamas", 81.46, 81.47)),
+        )
+        val real = listOf(
+            LyricsAligner.RealLine("y mi sentimiento", 81.1),
+            LyricsAligner.RealLine("no lo cambiare jamas", 85.0),
+        )
+        val out = LyricsAligner.align(real, local)!!
+        val line2 = out.lines[1]
+        assertThat(line2.end - line2.start).isAtLeast(0.7)
+        assertThat(line2.start).isWithin(0.6).of(85.3) // LRC + measured offset
+    }
+
     @Test fun `dtw matches equal words and tolerates gaps`() {
         val out = LyricsAligner.dtwMatch(
             listOf("a", "b", "c"),
